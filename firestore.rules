@@ -1,0 +1,54 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // NOTE: This checks the user's role stored in /users/{uid}.role
+    function role() {
+      return isSignedIn()
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : "";
+    }
+
+    function isAdmin() {
+      return role() == "admin";
+    }
+
+    // Users collection
+    // - Users can read their own profile
+    // - Admin can read/write any user profile
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow create: if isSignedIn() && request.auth.uid == uid; // user can create their own profile
+      allow update: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Underwriters collection
+    // - Any signed-in user can read (needed for assignment dropdown + admin screens)
+    // - Only admin can create/update/delete underwriters
+    match /underwriters/{id} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Applications collection
+    // - Any signed-in user can read/write (V1 workflow platform behavior)
+    // - Only admin can delete
+    match /applications/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

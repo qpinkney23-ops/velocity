@@ -1,0 +1,22 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // App storage convention:
+    // applications/{applicationId}/...files
+    match /applications/{applicationId}/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // Default deny
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

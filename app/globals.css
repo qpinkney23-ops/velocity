@@ -1,0 +1,253 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== Velocity Theme (matches target "final look") ===== */
+
+:root {
+  --v-bg: #f5f7fb;
+  --v-card: #ffffff;
+  --v-border: rgba(15, 23, 42, 0.08);
+  --v-text: #0f172a;
+  --v-muted: rgba(15, 23, 42, 0.62);
+
+  --v-sidebar: #0b1631;       /* deep navy */
+  --v-sidebar-2: #0e1d3d;
+
+  --v-primary: #1f6feb;       /* clean blue */
+  --v-primary-2: rgba(31,111,235,0.22);
+  --v-primary-3: rgba(31,111,235,0.14);
+
+  --v-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  --v-shadow-2: 0 6px 18px rgba(15, 23, 42, 0.10);
+  --v-shadow-3: 0 18px 50px rgba(15, 23, 42, 0.14);
+
+  --v-glow: 0 12px 28px rgba(31,111,235,0.22);
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  background: var(--v-bg);
+  color: var(--v-text);
+}
+
+/* Reusable utility classes */
+.v-card {
+  background: var(--v-card);
+  border: 1px solid var(--v-border);
+  border-radius: 14px;
+  box-shadow: var(--v-shadow);
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+
+.v-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--v-shadow-3);
+}
+
+.v-card-soft {
+  background: rgba(255,255,255,0.92);
+  border: 1px solid var(--v-border);
+  border-radius: 14px;
+  box-shadow: var(--v-shadow-2);
+}
+
+.v-muted {
+  color: var(--v-muted);
+}
+
+.v-chip {
+  border: 1px solid var(--v-border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: rgba(255,255,255,0.7);
+}
+
+.v-btn {
+  border: 1px solid var(--v-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+
+.v-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 26px rgba(15,23,42,0.10);
+  border-color: rgba(15,23,42,0.14);
+}
+
+.v-btn:active {
+  transform: translateY(0px);
+}
+
+.v-btn-primary {
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--v-primary);
+  color: white;
+  border: 1px solid rgba(31, 111, 235, 0.35);
+  box-shadow: var(--v-glow);
+  transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease;
+}
+
+.v-btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 42px rgba(31,111,235,0.28);
+  filter: saturate(1.05);
+}
+
+.v-btn-primary:active {
+  transform: translateY(0px);
+  box-shadow: 0 12px 28px rgba(31,111,235,0.22);
+}
+
+/* ===== Sidebar polish (low-risk, pure CSS) ===== */
+
+.v-sidebar {
+  background: linear-gradient(180deg, var(--v-sidebar) 0%, var(--v-sidebar-2) 100%);
+  border-right: 1px solid rgba(255,255,255,0.06);
+}
+
+.v-sidebar-brand {
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 14px;
+  background: rgba(255,255,255,0.06);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+}
+
+.v-logo {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: radial-gradient(110% 110% at 20% 20%, rgba(31,111,235,0.95) 0%, rgba(31,111,235,0.45) 40%, rgba(255,255,255,0.10) 100%);
+  border: 1px solid rgba(255,255,255,0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.v-logo-text {
+  color: rgba(255,255,255,0.95);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+/* Premium wordmark */
+.v-wordmark {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(255,255,255,0.74) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.v-submark {
+  font-size: 12px;
+  line-height: 1.05;
+  color: rgba(255,255,255,0.60);
+}
+
+.v-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  border: 1px solid rgba(255,255,255,0.10);
+  color: rgba(255,255,255,0.85);
+  background: rgba(255,255,255,0.06);
+}
+
+.v-pill-muted {
+  color: rgba(255,255,255,0.65);
+  background: rgba(255,255,255,0.04);
+}
+
+.v-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  color: rgba(255,255,255,0.72);
+  border: 1px solid transparent;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+.v-nav-item:hover {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.90);
+}
+
+.v-nav-item-active {
+  background: rgba(31,111,235,0.14);
+  border-color: rgba(31,111,235,0.30);
+  color: rgba(255,255,255,0.95);
+  box-shadow: 0 10px 26px rgba(31,111,235,0.12);
+}
+
+.v-nav-item-active::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 999px;
+  background: rgba(31,111,235,0.95);
+  box-shadow: 0 0 0 4px rgba(31,111,235,0.14);
+}
+
+.v-nav-icon {
+  width: 18px;
+  display: inline-flex;
+  justify-content: center;
+  opacity: 0.95;
+}
+
+.v-nav-dot {
+  position: absolute;
+  right: 10px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.95);
+  box-shadow: 0 0 0 3px rgba(31,111,235,0.20);
+}
+
+.v-sidebar-tip {
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 12px 12px;
+  background: rgba(255,255,255,0.05);
+}
+
+/* ===== Topbar accent (safe; applies only if Topbar uses these classes) ===== */
+.v-topbar {
+  position: relative;
+}
+
+.v-topbar::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(31,111,235,0) 0%, rgba(31,111,235,0.85) 50%, rgba(31,111,235,0) 100%);
+  opacity: 0.55;
+  pointer-events: none;
+}

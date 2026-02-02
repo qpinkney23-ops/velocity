@@ -1,0 +1,760 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useParams } from "next/navigation";
+import { db, storage } from "@/lib/firebase";
+import {
+  arrayUnion,
+  collection,
+  deleteField,
+  doc,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  updateDoc,
+} from "firebase/firestore";
+import { getDownloadURL, ref, uploadBytesResumable } from "firebase/storage";
+import { useToast } from "@/components/ui/ToastProvider";
+
+type Underwriter = {
+  id: string;
+  name?: string;
+  email?: string;
+  active?: boolean;
+};
+
+type StoredDoc = {
+  name: string;
+  url: string;
+  path: string;
+  uploadedAtMs: number; // plain value (allowed inside arrayUnion)
+};
+
+type Priority = "High" | "Medium" | "Low";
+
+type ScanCondition = {
+  title: string;
+  rationale: string;
+  priority: Priority;
+};
+
+type ScanExtracted = {
+  borrowerName?: string;
+  borrowerEmail?: string;
+
+  coBorrowerName?: string;
+  coBorrowerEmail?: string;
+
+  employer?: string;
+  jobTitle?: string;
+  incomeAnnual?: number;
+
+  coEmployer?: string;
+  coJobTitle?: string;
+  coIncomeAnnual?: number;
+
+  creditScore?: number;
+  dti?: number; // 0-1
+};
+
+type ScanResult = {
+  mode: "rules_v1";
+  scannedAt?: any; // serverTimestamp
+  docName?: string;
+  summary: string;
+  preview?: string;
+  extractedChars?: number;
+  extracted: ScanExtracted;
+  conditions: ScanCondition[];
+  redFlags: string[];
+};
+
+type AppDoc = {
+  borrowerName?: string;
+  email?: string;
+  loanAmount?: number;
+  status?: string;
+  underwriterId?: string;
+  notes?: string;
+  storedDocs?: StoredDoc[];
+  scan?: ScanResult;
+  createdAt?: any;
+  updatedAt?: any;
+};
+
+function formatMoney(n?: number) {
+  const v = typeof n === "number" && Number.isFinite(n) ? n : 0;
+  return `$${v.toLocaleString()}`;
+}
+
+function fmtDateTime(ts: any): string {
+  if (!ts) return "—";
+  const d = typeof ts?.toDate === "function" ? ts.toDate() : null;
+  if (!d || !(d instanceof Date) || isNaN(d.getTime())) return "—";
+  return d.toLocaleString();
+}
+
+function statusTone(status: string) {
+  const s = (status || "").toLowerCase();
+  if (s.includes("approve")) return "green";
+  if (s.includes("deny") || s.includes("decline")) return "red";
+  if (s.includes("condition")) return "amber";
+  if (s.includes("review") || s.includes("uw")) return "blue";
+  if (s.includes("new")) return "gray";
+  return "gray";
+}
+
+function StatusChip({ status }: { status: string }) {
+  const tone = statusTone(status);
+  const map: Record<string, { bg: string; border: string; text: string }> = {
+    green: { bg: "bg-green-50", border: "border-green-200", text: "text-green-800" },
+    red: { bg: "bg-red-50", border: "border-red-200", text: "text-red-700" },
+    amber: { bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-800" },
+    blue: { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-800" },
+    gray: { bg: "bg-gray-100", border: "border-gray-200", text: "text-gray-700" },
+  };
+  const c = map[tone] ?? map.gray;
+
+  return (
+    <span className={`inline-flex items-center px-2 py-1 rounded-md border text-xs ${c.bg} ${c.border} ${c.text}`}>
+      {status || "—"}
+    </span>
+  );
+}
+
+function chipTone(kind: "ok" | "warn" | "muted") {
+  if (kind === "ok") return "bg-green-50 border-green-200 text-green-800";
+  if (kind === "warn") return "bg-amber-50 border-amber-200 text-amber-800";
+  return "bg-gray-100 border-gray-200 text-gray-700";
+}
+
+function Chip({ label, kind }: { label: string; kind: "ok" | "warn" | "muted" }) {
+  return <span className={`inline-flex items-center px-2 py-1 rounded-md border text-xs ${chipTone(kind)}`}>{label}</span>;
+}
+
+function sanitizeFilename(name: string) {
+  return (name || "document")
+    .replace(/[^\w.\-()\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function pct01(n?: number) {
+  if (typeof n !== "number" || !Number.isFinite(n)) return "—";
+  return `${Math.round(n * 100)}%`;
+}
+
+function PriorityChip({ p }: { p: Priority }) {
+  const map: Record<string, { bg: string; border: string; text: string }> = {
+    High: { bg: "bg-red-50", border: "border-red-200", text: "text-red-700" },
+    Medium: { bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-800" },
+    Low: { bg: "bg-gray-100", border: "border-gray-200", text: "text-gray-700" },
+  };
+  const c = map[p];
+  return (
+    <span className={`inline-flex items-center px-2 py-1 rounded-md border text-xs ${c.bg} ${c.border} ${c.text}`}>
+      {p}
+    </span>
+  );
+}
+
+function latestDoc(docs: StoredDoc[]): StoredDoc | null {
+  if (!docs || docs.length === 0) return null;
+  let best = docs[0];
+  for (const d of docs) {
+    if ((d?.uploadedAtMs || 0) > (best?.uploadedAtMs || 0)) best = d;
+  }
+  return best || null;
+}
+
+export default function ApplicationDetailPage() {
+  const params = useParams();
+  const id = String((params as any)?.id || "");
+  const { toast } = useToast();
+
+  const [app, setApp] = useState<AppDoc | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const [underwriters, setUnderwriters] = useState<Underwriter[]>([]);
+
+  const [statusDraft, setStatusDraft] = useState("");
+  const [notesDraft, setNotesDraft] = useState("");
+  const [uwDraft, setUwDraft] = useState("");
+
+  const [uploading, setUploading] = useState(false);
+  const [uploadPct, setUploadPct] = useState(0);
+
+  const [scanTab, setScanTab] = useState<"Summary" | "Conditions" | "Docs">("Summary");
+  const [scanning, setScanning] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const appRef = useMemo(() => doc(db, "applications", id), [id]);
+
+  // Live application
+  useEffect(() => {
+    if (!id) return;
+    const unsub = onSnapshot(
+      appRef,
+      (snap) => {
+        const data = (snap.data() as any) || null;
+        setApp(data);
+        setLoading(false);
+
+        if (data) {
+          setStatusDraft((data.status || "New").toString());
+          setNotesDraft((data.notes || "").toString());
+          setUwDraft((data.underwriterId || "").toString());
+        }
+      },
+      () => setLoading(false)
+    );
+    return () => unsub();
+  }, [appRef, id]);
+
+  // Underwriters list
+  useEffect(() => {
+    const q = query(collection(db, "underwriters"), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const list: Underwriter[] = [];
+        snap.forEach((d) => list.push({ id: d.id, ...(d.data() as any) }));
+        setUnderwriters(list);
+      },
+      () => {}
+    );
+    return () => unsub();
+  }, []);
+
+  const storedDocs = (app?.storedDocs || []) as StoredDoc[];
+  const scan = app?.scan || null;
+
+  const statusOptions = useMemo(() => {
+    return ["New", "UW Review", "Conditions", "Approved"] as const;
+  }, []);
+
+  async function saveStatus() {
+    try {
+      await updateDoc(appRef, { status: statusDraft, updatedAt: serverTimestamp() });
+      toast({ type: "success", title: "Status saved", message: `Set to “${statusDraft}”` });
+    } catch (e: any) {
+      toast({ type: "error", title: "Status save failed", message: e?.message ?? "Unknown error" });
+    }
+  }
+
+  async function saveNotes() {
+    try {
+      await updateDoc(appRef, { notes: notesDraft, updatedAt: serverTimestamp() });
+      toast({ type: "success", title: "Notes saved" });
+    } catch (e: any) {
+      toast({ type: "error", title: "Notes save failed", message: e?.message ?? "Unknown error" });
+    }
+  }
+
+  async function saveUnderwriter() {
+    try {
+      await updateDoc(appRef, { underwriterId: uwDraft || "", updatedAt: serverTimestamp() });
+      toast({ type: "success", title: "Underwriter assigned" });
+    } catch (e: any) {
+      toast({ type: "error", title: "Assignment failed", message: e?.message ?? "Unknown error" });
+    }
+  }
+
+  async function handleUpload(file: File) {
+    if (!id) return;
+
+    setUploading(true);
+    setUploadPct(0);
+
+    const cleanName = sanitizeFilename(file.name);
+    const path = `applications/${id}/${Date.now()}_${cleanName}`;
+    const storageRef = ref(storage, path);
+
+    try {
+      const task = uploadBytesResumable(storageRef, file);
+
+      await new Promise<void>((resolve, reject) => {
+        task.on(
+          "state_changed",
+          (snap) => {
+            const pctVal = snap.totalBytes ? Math.round((snap.bytesTransferred / snap.totalBytes) * 100) : 0;
+            setUploadPct(pctVal);
+          },
+          (err) => reject(err),
+          () => resolve()
+        );
+      });
+
+      const url = await getDownloadURL(storageRef);
+
+      const docMeta: StoredDoc = {
+        name: cleanName,
+        url,
+        path,
+        uploadedAtMs: Date.now(),
+      };
+
+      await updateDoc(appRef, {
+        storedDocs: arrayUnion(docMeta as any),
+        updatedAt: serverTimestamp(),
+      });
+
+      toast({ type: "success", title: "Upload complete", message: cleanName });
+      setScanTab("Docs");
+    } catch (e: any) {
+      toast({ type: "error", title: "Upload failed", message: e?.message ?? "Unknown error" });
+    } finally {
+      setUploading(false);
+      setUploadPct(0);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  async function runAiScan() {
+    if (scanning) return;
+
+    if (storedDocs.length === 0) {
+      toast({ type: "error", title: "Upload required", message: "Upload a document before running AI Scan." });
+      return;
+    }
+
+    const docPick = latestDoc(storedDocs);
+    if (!docPick?.url) {
+      toast({ type: "error", title: "No doc URL", message: "Stored doc URL missing — re-upload the document." });
+      return;
+    }
+
+    setScanning(true);
+
+    try {
+      const res = await fetch(`/api/applications/${id}/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ downloadURL: docPick.url, docName: docPick.name }),
+      });
+
+      const json = await res.json().catch(() => ({} as any));
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || `Analyze failed (${res.status})`);
+      }
+
+      const result: ScanResult = {
+        mode: "rules_v1",
+        scannedAt: serverTimestamp(),
+        docName: json?.docName || docPick.name,
+        summary: (json?.summary || "Scan complete.").toString(),
+        preview: (json?.preview || "").toString(),
+        extractedChars: Number(json?.extractedChars || 0) || 0,
+        extracted: (json?.extracted || {}) as ScanExtracted,
+        conditions: (Array.isArray(json?.conditions) ? json.conditions : []) as ScanCondition[],
+        redFlags: (Array.isArray(json?.redFlags) ? json.redFlags : []) as string[],
+      };
+
+      await updateDoc(appRef, {
+        scan: result as any,
+        updatedAt: serverTimestamp(),
+      });
+
+      toast({ type: "success", title: "AI Scan complete", message: "Rule-based extraction saved to Firestore." });
+      setScanTab("Summary");
+    } catch (e: any) {
+      toast({ type: "error", title: "AI Scan failed", message: e?.message ?? "Unknown error", durationMs: 3800 });
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  async function clearScan() {
+    try {
+      await updateDoc(appRef, {
+        scan: deleteField(),
+        updatedAt: serverTimestamp(),
+      });
+      toast({ type: "success", title: "Scan cleared" });
+      setScanTab("Summary");
+    } catch (e: any) {
+      toast({ type: "error", title: "Clear failed", message: e?.message ?? "Unknown error" });
+    }
+  }
+
+  const uwLabel = useMemo(() => {
+    const u = underwriters.find((x) => x.id === (app?.underwriterId || ""));
+    if (!u) return "Unassigned";
+    return u.name || u.email || "Underwriter";
+  }, [underwriters, app?.underwriterId]);
+
+  const scanStatusChip = scan ? <Chip label="Scan: Completed" kind="ok" /> : <Chip label="Scan: Not run yet" kind="muted" />;
+  const scanTime = scan?.scannedAt ? fmtDateTime(scan.scannedAt) : "—";
+
+  if (loading) {
+    return (
+      <div className="v-card p-6">
+        <div className="text-sm v-muted">Loading application…</div>
+      </div>
+    );
+  }
+
+  if (!app) {
+    return (
+      <div className="v-card p-6">
+        <div className="text-sm text-red-600">Application not found.</div>
+      </div>
+    );
+  }
+
+  const ex = scan?.extracted || {};
+  const borrowerLabel = (app.borrowerName || "").toString().trim() || (ex.borrowerName || "").toString().trim() || "Unknown borrower";
+  const emailLabel = (app.email || "").toString().trim() || (ex.borrowerEmail || "").toString().trim() || `ID: ${id}`;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <div className="text-xs v-muted">Application</div>
+          <div className="text-2xl font-semibold">{borrowerLabel}</div>
+          <div className="text-sm v-muted">{emailLabel}</div>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="v-chip">{formatMoney(app.loanAmount)}</span>
+          <StatusChip status={app.status || "New"} />
+          <span className="v-chip">{uwLabel}</span>
+          {scanStatusChip}
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-3">
+        <div className="lg:col-span-2 space-y-3">
+          <div className="v-card p-5">
+            <div className="text-sm font-semibold">Workflow</div>
+            <div className="text-xs v-muted mt-1">Status + underwriting assignment.</div>
+
+            <div className="mt-4 grid md:grid-cols-2 gap-3">
+              <div>
+                <div className="text-xs v-muted mb-1">Status</div>
+                <select
+                  className="w-full border rounded-xl p-2 bg-white text-sm"
+                  style={{ borderColor: "rgba(15,23,42,0.10)" }}
+                  value={statusDraft}
+                  onChange={(e) => setStatusDraft(e.target.value)}
+                  disabled={uploading || scanning}
+                >
+                  {statusOptions.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+                <button className="v-btn-primary mt-2" onClick={saveStatus} disabled={uploading || scanning}>
+                  Save status
+                </button>
+              </div>
+
+              <div>
+                <div className="text-xs v-muted mb-1">Assign underwriter</div>
+                <select
+                  className="w-full border rounded-xl p-2 bg-white text-sm"
+                  style={{ borderColor: "rgba(15,23,42,0.10)" }}
+                  value={uwDraft}
+                  onChange={(e) => setUwDraft(e.target.value)}
+                  disabled={uploading || scanning}
+                >
+                  <option value="">Unassigned</option>
+                  {underwriters.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {(u.name || u.email || u.id) + (u.active === false ? " (inactive)" : "")}
+                    </option>
+                  ))}
+                </select>
+                <button className="v-btn mt-2" onClick={saveUnderwriter} disabled={uploading || scanning}>
+                  Save assignment
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="v-card p-5">
+            <div className="text-sm font-semibold">Internal notes</div>
+            <div className="text-xs v-muted mt-1">Processor / UW notes + conditions tracking.</div>
+
+            <textarea
+              className="w-full border rounded-xl p-3 bg-white text-sm mt-3"
+              style={{ borderColor: "rgba(15,23,42,0.10)", minHeight: 140 }}
+              value={notesDraft}
+              onChange={(e) => setNotesDraft(e.target.value)}
+              placeholder="Add notes…"
+              disabled={uploading || scanning}
+            />
+
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              <button className="v-btn-primary" onClick={saveNotes} disabled={uploading || scanning}>
+                Save notes
+              </button>
+              <button
+                className="v-btn"
+                onClick={() => {
+                  setNotesDraft(app.notes || "");
+                  toast({ type: "info", title: "Reset notes", message: "Draft restored to last saved version." });
+                }}
+                disabled={uploading || scanning}
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+
+          <div className="v-card p-5">
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <div className="text-sm font-semibold">AI Scan</div>
+                <div className="text-xs v-muted mt-1">{scan ? `Last scanned: ${scanTime}` : "Run scan to generate summary + conditions."}</div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <button className="v-btn" onClick={() => setScanTab("Summary")}>Summary</button>
+                <button className="v-btn" onClick={() => setScanTab("Conditions")}>Conditions</button>
+                <button className="v-btn" onClick={() => setScanTab("Docs")}>Docs</button>
+                <button className="v-btn-primary" onClick={runAiScan} disabled={scanning || storedDocs.length === 0}>
+                  {scanning ? "Scanning…" : "Run AI Scan"}
+                </button>
+                <button className="v-btn" onClick={clearScan} disabled={!scan || scanning}>
+                  Clear Scan
+                </button>
+              </div>
+            </div>
+
+            {!scan && (
+              <div className="mt-4 text-sm v-muted">
+                No scan results yet. Upload a document and click <span className="font-semibold">Run AI Scan</span>.
+              </div>
+            )}
+
+            {scan && (
+              <div className="mt-4">
+                {scanTab === "Summary" && (
+                  <div className="space-y-3">
+                    <div className="v-card-soft p-4">
+                      <div className="text-xs v-muted">Scanned doc</div>
+                      <div className="text-sm font-semibold mt-1">{scan.docName || "—"}</div>
+                      <div className="text-xs v-muted mt-1">
+                        Mode: {scan.mode} • chars: {scan.extractedChars ?? 0}
+                      </div>
+                    </div>
+
+                    <div className="v-card-soft p-4">
+                      <div className="text-xs v-muted">Summary</div>
+                      <div className="text-sm mt-2" style={{ color: "rgba(15,23,42,0.82)" }}>
+                        {scan.summary}
+                      </div>
+                      {!!scan.preview && (
+                        <div className="mt-3 text-xs v-muted" style={{ whiteSpace: "pre-wrap" }}>
+                          Preview: {scan.preview.slice(0, 500)}{scan.preview.length > 500 ? "…" : ""}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-3">
+                      <div className="v-card-soft p-4">
+                        <div className="text-xs v-muted">Borrower income</div>
+                        <div className="text-lg font-semibold mt-1">{ex.incomeAnnual ? `${formatMoney(ex.incomeAnnual)}/yr` : "—"}</div>
+                        <div className="text-xs v-muted mt-1">{ex.employer || "Employer —"}</div>
+                        <div className="text-xs v-muted mt-1">{ex.jobTitle || "Job title —"}</div>
+                      </div>
+
+                      <div className="v-card-soft p-4">
+                        <div className="text-xs v-muted">Credit + DTI</div>
+                        <div className="text-lg font-semibold mt-1">{ex.creditScore ? ex.creditScore : "—"}</div>
+                        <div className="text-xs v-muted mt-1">DTI {pct01(ex.dti)}</div>
+                      </div>
+                    </div>
+
+                    {(ex.coBorrowerName || ex.coBorrowerEmail || ex.coIncomeAnnual || ex.coEmployer || ex.coJobTitle) && (
+                      <div className="v-card-soft p-4">
+                        <div className="text-xs v-muted">Co-borrower snapshot</div>
+                        <div className="text-sm font-semibold mt-1">{ex.coBorrowerName || "—"}</div>
+                        <div className="text-xs v-muted mt-1">{ex.coBorrowerEmail || "—"}</div>
+                        <div className="text-xs v-muted mt-2">{ex.coEmployer || "Employer —"}</div>
+                        <div className="text-xs v-muted mt-1">{ex.coJobTitle || "Job title —"}</div>
+                        <div className="text-sm font-semibold mt-2">{ex.coIncomeAnnual ? `${formatMoney(ex.coIncomeAnnual)}/yr` : "Income —"}</div>
+                      </div>
+                    )}
+
+                    {scan.redFlags?.length > 0 && (
+                      <div className="v-card-soft p-4">
+                        <div className="text-xs v-muted">Red flags</div>
+                        <ul className="mt-2 text-sm list-disc pl-5" style={{ color: "rgba(15,23,42,0.78)" }}>
+                          {scan.redFlags.map((f, i) => (
+                            <li key={i}>{f}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {scanTab === "Conditions" && (
+                  <div className="space-y-2">
+                    {(scan.conditions || []).length === 0 ? (
+                      <div className="text-sm v-muted">No conditions returned.</div>
+                    ) : (
+                      scan.conditions.map((c, i) => (
+                        <div key={i} className="v-card-soft p-4">
+                          <div className="flex items-start justify-between gap-2 flex-wrap">
+                            <div className="text-sm font-semibold">{c.title}</div>
+                            <PriorityChip p={c.priority} />
+                          </div>
+                          <div className="text-xs v-muted mt-1">{c.rationale}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {scanTab === "Docs" && (
+                  <div className="space-y-2">
+                    {storedDocs.length === 0 ? (
+                      <div className="text-sm v-muted">No stored docs yet.</div>
+                    ) : (
+                      storedDocs
+                        .slice()
+                        .sort((a, b) => (b.uploadedAtMs || 0) - (a.uploadedAtMs || 0))
+                        .map((d, idx) => (
+                          <a
+                            key={`${d.path}_${idx}`}
+                            href={d.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="block rounded-xl border p-3 text-sm transition"
+                            style={{ borderColor: "rgba(15,23,42,0.10)", background: "rgba(255,255,255,0.75)" }}
+                          >
+                            <div className="font-medium">{d.name}</div>
+                            <div className="text-xs v-muted mt-1">Click to open</div>
+                          </a>
+                        ))
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="lg:col-span-1 space-y-3">
+          <div className="v-card p-5">
+            <div className="text-sm font-semibold">Documents</div>
+            <div className="text-xs v-muted mt-1">Upload docs to Storage. Stored docs appear below.</div>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="mt-3 block w-full text-sm"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleUpload(f);
+              }}
+              disabled={uploading || scanning}
+            />
+
+            {uploading && (
+              <div className="mt-3">
+                <div className="text-xs v-muted">Uploading… {uploadPct}%</div>
+                <div className="h-2 rounded-xl mt-2" style={{ background: "rgba(15,23,42,0.06)", overflow: "hidden" }}>
+                  <div
+                    className="h-2 rounded-xl"
+                    style={{
+                      width: `${uploadPct}%`,
+                      background: "rgba(31,111,235,0.75)",
+                      transition: "width 150ms linear",
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="mt-4 flex gap-2 flex-wrap">
+              <button className="v-btn" onClick={() => fileInputRef.current?.click()} disabled={uploading || scanning}>
+                Upload doc
+              </button>
+              <button className="v-btn-primary" onClick={runAiScan} disabled={uploading || scanning || storedDocs.length === 0}>
+                {scanning ? "Scanning…" : "Run AI Scan"}
+              </button>
+            </div>
+
+            {storedDocs.length === 0 ? (
+              <div className="text-xs v-muted mt-3">No stored docs yet.</div>
+            ) : (
+              <div className="mt-3">
+                <div className="text-xs font-semibold" style={{ color: "rgba(15,23,42,0.78)" }}>
+                  Stored docs
+                </div>
+
+                <div className="mt-2 space-y-2">
+                  {storedDocs
+                    .slice()
+                    .sort((a, b) => (b.uploadedAtMs || 0) - (a.uploadedAtMs || 0))
+                    .map((d, idx) => (
+                      <a
+                        key={`${d.path}_${idx}`}
+                        href={d.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block rounded-xl border p-3 text-sm transition"
+                        style={{ borderColor: "rgba(15,23,42,0.10)", background: "rgba(255,255,255,0.75)" }}
+                      >
+                        <div className="font-medium">{d.name}</div>
+                        <div className="text-xs v-muted mt-1">Click to open</div>
+                      </a>
+                    ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="v-card p-5">
+            <div className="text-sm font-semibold">Extracted snapshot</div>
+            <div className="text-xs v-muted mt-1">Auto-populates after AI Scan.</div>
+
+            {!scan ? (
+              <div className="text-sm v-muted mt-3">Run AI Scan to populate extracted fields.</div>
+            ) : (
+              <div className="mt-3 space-y-2 text-sm">
+                <div className="v-card-soft p-3">
+                  <div className="text-xs v-muted">Borrower</div>
+                  <div className="font-semibold mt-1">{ex.borrowerName || borrowerLabel}</div>
+                  <div className="text-xs v-muted mt-1">{ex.borrowerEmail || emailLabel}</div>
+                </div>
+
+                {(ex.coBorrowerName || ex.coBorrowerEmail) && (
+                  <div className="v-card-soft p-3">
+                    <div className="text-xs v-muted">Co-borrower</div>
+                    <div className="font-semibold mt-1">{ex.coBorrowerName || "—"}</div>
+                    <div className="text-xs v-muted mt-1">{ex.coBorrowerEmail || "—"}</div>
+                  </div>
+                )}
+
+                <div className="v-card-soft p-3">
+                  <div className="text-xs v-muted">Employer / Title</div>
+                  <div className="font-semibold mt-1">{ex.employer || "—"}</div>
+                  <div className="text-xs v-muted mt-1">{ex.jobTitle || "—"}</div>
+                </div>
+
+                <div className="v-card-soft p-3">
+                  <div className="text-xs v-muted">Income</div>
+                  <div className="font-semibold mt-1">{ex.incomeAnnual ? `${formatMoney(ex.incomeAnnual)}/yr` : "—"}</div>
+                </div>
+
+                <div className="v-card-soft p-3">
+                  <div className="text-xs v-muted">Credit score / DTI</div>
+                  <div className="font-semibold mt-1">{ex.creditScore ? ex.creditScore : "—"}</div>
+                  <div className="text-xs v-muted mt-1">DTI {pct01(ex.dti)}</div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
