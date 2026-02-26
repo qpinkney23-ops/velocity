@@ -1,16 +1,6 @@
 import { NextResponse } from "next/server";
-import { initAdmin } from "@/lib/firebase-admin";
 
 export const runtime = "nodejs";
-
-/**
- * DEBUG ENDPOINT (protected)
- * Purpose: create/ensure an overlay doc exists and is attached to a program.
- *
- * IMPORTANT:
- * - This endpoint ALWAYS returns JSON (even on errors) so we stop getting empty 500 responses.
- * - This does NOT try to "infer rules from PDF" yet. It creates a predictable overlay with safe placeholder rules.
- */
 
 function authorized(req: Request) {
   const url = new URL(req.url);
@@ -56,15 +46,17 @@ function safeJsonError(err: any) {
 }
 
 export async function GET(req: Request) {
+  // If we can’t even return this, the route file isn’t running (deployment/route mismatch)
   if (!authorized(req)) {
     return NextResponse.json({ ok: false, error: "403: Invalid demo token" }, { status: 403 });
   }
+
   return NextResponse.json(
     {
       ok: true,
-      hint:
-        "POST JSON: { companyProfileId, programKey, objectPath?, overlayName? }. This creates/ensures overlay + attaches to program.",
+      route: "/api/debug/overlay/from-storage",
       time: nowIso(),
+      note: "GET is alive. Use POST to create/attach overlay.",
     },
     { status: 200 }
   );
@@ -76,9 +68,12 @@ export async function POST(req: Request) {
   }
 
   try {
+    // IMPORTANT: dynamic import so firebase-admin failures become JSON (not empty 500)
+    const mod = await import("@/lib/firebase-admin");
+    const initAdmin = mod.initAdmin as unknown as () => { db: any };
+
     const url = new URL(req.url);
     const forceFromQuery = url.searchParams.get("force") === "1";
-
     const body = (await req.json()) as Body;
 
     const companyProfileId = String(body?.companyProfileId || "").trim();
@@ -87,23 +82,17 @@ export async function POST(req: Request) {
     const overlayName = body?.overlayName ? String(body.overlayName).trim() : "Overlay (debug)";
     const force = Boolean(body?.force) || forceFromQuery;
 
-    if (!companyProfileId) {
-      return NextResponse.json({ ok: false, error: "Missing companyProfileId" }, { status: 400 });
-    }
-    if (!programKey) {
-      return NextResponse.json({ ok: false, error: "Missing programKey" }, { status: 400 });
-    }
+    if (!companyProfileId) return NextResponse.json({ ok: false, error: "Missing companyProfileId" }, { status: 400 });
+    if (!programKey) return NextResponse.json({ ok: false, error: "Missing programKey" }, { status: 400 });
 
     const { db } = initAdmin();
 
-    // Deterministic IDs (stable + predictable)
     const programId = `program-${companyProfileId}-${programKey}`;
     const overlayId = `overlay-${companyProfileId}-${programKey}-v1`;
 
     const programRef = db.collection("programs").doc(programId);
     const overlayRef = db.collection("overlays").doc(overlayId);
 
-    // 1) Ensure program exists
     const programSnap = await programRef.get();
     if (!programSnap.exists) {
       return NextResponse.json(
@@ -118,10 +107,8 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2) Create/ensure overlay exists
     const overlaySnap = await overlayRef.get();
 
-    // JS-safe placeholder rules (overlay source). 5 rules so it matches your "overlayRuleCount: 5".
     const overlayRules: Rule[] = [
       {
         ruleId: "ov-income-missing",
@@ -190,20 +177,12 @@ export async function POST(req: Request) {
       overlayAction = "updated";
     }
 
-    // 3) Attach overlay to program (set activeOverlayId)
-    // If already attached and not forcing, we still respond ok.
     const programData = programSnap.data() as any;
     const currentActive = programData?.activeOverlayId ? String(programData.activeOverlayId) : null;
 
     let programUpdated = false;
     if (currentActive !== overlayId) {
-      await programRef.set(
-        {
-          activeOverlayId: overlayId,
-          updatedAt: nowIso(),
-        },
-        { merge: true }
-      );
+      await programRef.set({ activeOverlayId: overlayId, updatedAt: nowIso() }, { merge: true });
       programUpdated = true;
     }
 
@@ -218,20 +197,13 @@ export async function POST(req: Request) {
         overlayName,
         overlayAction,
         programUpdated,
-        note:
-          "Overlay ensured + program activeOverlayId set. This uses placeholder rules (not PDF-derived yet).",
       },
       { status: 200 }
     );
   } catch (err: any) {
-    // The whole point: NEVER return an empty 500 again.
     console.error("from-storage overlay error:", err);
     return NextResponse.json(
-      {
-        ok: false,
-        error: "500: from-storage failed",
-        details: safeJsonError(err),
-      },
+      { ok: false, error: "500: from-storage failed", details: safeJsonError(err) },
       { status: 500 }
     );
   }
