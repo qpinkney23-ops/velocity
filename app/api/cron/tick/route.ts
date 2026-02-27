@@ -1,84 +1,66 @@
 import { NextResponse } from "next/server";
+import { initAdmin } from "@/lib/firebase-admin";
 
 export const runtime = "nodejs";
 
-// Vercel Cron will call this endpoint with GET.
-// We allow either:
-// 1) real Vercel Cron header (x-vercel-cron: 1), OR
-// 2) manual secret (for testing) via header/query.
-function assertCronAuth(req: Request) {
-  const vercelCron = req.headers.get("x-vercel-cron") === "1";
-
-  const required = process.env.CRON_SECRET || "";
-  const gotHeader =
-    req.headers.get("x-cron-secret") ||
-    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
-    "";
-  const gotQuery = new URL(req.url).searchParams.get("secret") || "";
-
-  // If no CRON_SECRET is set, we still allow Vercel cron header only.
-  if (!required) {
-    if (!vercelCron) throw new Error("401: Unauthorized (missing CRON_SECRET + not a Vercel cron request)");
-    return;
-  }
-
-  if (vercelCron) return;
-  if (gotHeader === required) return;
-  if (gotQuery === required) return;
-
-  throw new Error("401: Unauthorized (bad cron secret)");
+function isVercelCron(req: Request) {
+  // Vercel sets this header for cron invocations
+  const v = req.headers.get("x-vercel-cron");
+  return !!v;
 }
 
-function is401(err: unknown) {
-  return typeof err === "object" && err !== null && String((err as any).message || "").startsWith("401:");
+function requireCronAuth(req: Request) {
+  const secret = String(process.env.CRON_SECRET || "").trim();
+  if (!secret) throw new Error("401: Unauthorized (missing CRON_SECRET + not a Vercel cron request)");
+
+  // Allow either:
+  // 1) Real Vercel Cron invocation (x-vercel-cron present)
+  // 2) Manual call with ?secret= for testing
+  const url = new URL(req.url);
+  const got = (url.searchParams.get("secret") || "").trim();
+
+  if (isVercelCron(req)) return;
+  if (got && got === secret) return;
+
+  throw new Error("401: Unauthorized (not vercel cron and missing/invalid ?secret=)");
+}
+
+function is401(err: any) {
+  return String(err?.message || "").startsWith("401:");
 }
 
 export async function GET(req: Request) {
   try {
-    assertCronAuth(req);
+    requireCronAuth(req);
 
-    // Call your existing worker tick endpoint(s) from here.
-    // We call the internal debug tick endpoint you already built.
-    const url = new URL(req.url);
-    const t = url.searchParams.get("t") || "cron";
-    const origin = url.origin;
+    const { db, admin } = initAdmin();
+    const now = admin.firestore.Timestamp.now();
 
-    // IMPORTANT: /api/debug/run in tick mode calls the workers.
-    const tickUrl = `${origin}/api/debug/run?t=${encodeURIComponent(t)}&mode=tick`;
-
-    const res = await fetch(tickUrl, {
-      method: "GET",
-      headers: {
-        // Pass the worker secret through (server-to-server call)
-        "x-worker-secret": process.env.WORKER_SECRET || "",
+    // 🔥 Heartbeat: write a tiny marker that cron ran
+    await db.collection("_system").doc("cron").set(
+      {
+        lastCronTickAt: now,
+        lastCronTickIso: now.toDate().toISOString(),
       },
-    });
+      { merge: true }
+    );
 
-    const bodyText = await res.text();
-    let body: any = null;
-    try {
-      body = JSON.parse(bodyText);
-    } catch {
-      body = { raw: bodyText };
-    }
+    // Call the tick runner internally (same origin call)
+    const url = new URL(req.url);
+    const t = url.searchParams.get("t") || "";
+    const tickUrl = new URL("/api/debug/run", url.origin);
+    if (t) tickUrl.searchParams.set("t", t);
+    tickUrl.searchParams.set("mode", "tick");
+
+    const res = await fetch(tickUrl.toString(), { method: "GET" });
+    const body = await res.json().catch(() => ({}));
 
     return NextResponse.json(
-      {
-        ok: res.ok,
-        status: res.status,
-        tickUrl,
-        body,
-      },
-      { status: res.ok ? 200 : 500 }
+      { ok: true, cron: true, tickStatus: res.status, tick: body },
+      { status: 200 }
     );
   } catch (err: any) {
     const msg = String(err?.message || err);
-    if (is401(err)) return NextResponse.json({ ok: false, error: msg }, { status: 401 });
-    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
+    return NextResponse.json({ ok: false, error: msg }, { status: is401(err) ? 401 : 500 });
   }
-}
-
-// Optional: allow POST too (handy for manual testing)
-export async function POST(req: Request) {
-  return GET(req);
 }
