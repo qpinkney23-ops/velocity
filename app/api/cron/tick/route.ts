@@ -2,85 +2,90 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
+/**
+ * Vercel Cron always triggers with an HTTP GET. (UA: vercel-cron/1.0)
+ * We allow:
+ *  - Real Vercel Cron GETs (user-agent contains vercel-cron/1.0)
+ *  - OR manual calls if you provide ?secret=... matching CRON_SECRET
+ */
 function assertCronAuth(req: Request) {
-  // Vercel Cron Jobs: if CRON_SECRET exists, Vercel sends:
-  // Authorization: Bearer <CRON_SECRET>
-  const expected = process.env.CRON_SECRET || "";
-  if (!expected) {
-    // If you forget to set CRON_SECRET in Vercel, fail loudly (do not run unprotected).
-    throw new Error("500: CRON_SECRET missing on server");
+  const ua = (req.headers.get("user-agent") || "").toLowerCase();
+  const url = new URL(req.url);
+
+  const secretExpected = process.env.CRON_SECRET || "";
+  const secretGot = url.searchParams.get("secret") || "";
+
+  const isVercelCron = ua.includes("vercel-cron/1.0");
+  const hasSecret = !!secretExpected && secretGot === secretExpected;
+
+  if (!isVercelCron && !hasSecret) {
+    throw new Error("401: Unauthorized (not vercel cron and missing/invalid ?secret=)");
   }
-  const auth = req.headers.get("authorization") || "";
-  if (auth !== `Bearer ${expected}`) {
-    throw new Error("401: Unauthorized (bad authorization bearer)");
-  }
 }
 
-function is401(e: any) {
-  return String(e?.message || "").startsWith("401:");
+function is401(err: unknown) {
+  return typeof err === "object" && err !== null && String((err as any).message || "").startsWith("401:");
 }
 
-function baseUrlFromReq(req: Request) {
-  // Works on Vercel + locally
-  const host = req.headers.get("host") || "localhost:3000";
-  const proto = host.includes("localhost") ? "http" : "https";
-  return `${proto}://${host}`;
-}
+async function callWorker(origin: string, path: string) {
+  const secret = process.env.WORKER_SECRET || process.env.X_WORKER_SECRET || "";
+  if (!secret) throw new Error("500: WORKER_SECRET missing on server");
 
-async function callInternal(path: string, workerSecret: string, baseUrl: string) {
-  const res = await fetch(`${baseUrl}${path}`, {
+  const r = await fetch(`${origin}${path}`, {
     method: "POST",
     headers: {
-      "x-worker-secret": workerSecret,
       "content-type": "application/json",
+      "x-worker-secret": secret,
     },
+    // keep it deterministic
     cache: "no-store",
   });
 
-  const text = await res.text();
   let body: any = null;
   try {
-    body = text ? JSON.parse(text) : null;
+    body = await r.json();
   } catch {
-    body = { raw: text };
+    body = null;
   }
 
-  return { path, status: res.status, ok: res.ok, body };
+  return { path, status: r.status, body };
 }
 
 export async function GET(req: Request) {
   try {
     assertCronAuth(req);
 
-    const workerSecret = process.env.WORKER_SECRET || process.env.X_WORKER_SECRET || "";
-    if (!workerSecret) {
-      return NextResponse.json({ ok: false, error: "WORKER_SECRET missing on server" }, { status: 500 });
-    }
+    const origin = new URL(req.url).origin;
 
-    const baseUrl = baseUrlFromReq(req);
-
-    // One cron invocation = one deterministic tick sequence
     const results = [
-      await callInternal("/api/worker/watchdog", workerSecret, baseUrl),
-      await callInternal("/api/worker/files/process", workerSecret, baseUrl),
-      await callInternal("/api/worker/ai/process", workerSecret, baseUrl),
+      await callWorker(origin, "/api/worker/watchdog"),
+      await callWorker(origin, "/api/worker/files/process"),
+      await callWorker(origin, "/api/worker/ai/process"),
     ];
 
-    const anyFailed = results.some((r) => !r.ok);
+    const anyFailed = results.some((x) => x.status >= 400 || x.body?.ok === false);
 
     return NextResponse.json(
       {
-        ok: true,
-        cron: true,
-        baseUrl,
+        ok: !anyFailed,
+        mode: "cron",
+        time: new Date().toISOString(),
         anyFailed,
         results,
       },
       { status: anyFailed ? 500 : 200 }
     );
-  } catch (e: any) {
-    const msg = String(e?.message || e);
-    if (is401(e)) return NextResponse.json({ ok: false, error: msg }, { status: 401 });
+  } catch (err: any) {
+    const msg = String(err?.message || err);
+    if (is401(err)) return NextResponse.json({ ok: false, error: msg }, { status: 401 });
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
+}
+
+/**
+ * Optional: allow POST too (handy for manual testing with ?secret=)
+ * (Cron itself will use GET.)
+ */
+export async function POST(req: Request) {
+  return GET(req);
 }
