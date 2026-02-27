@@ -5,6 +5,15 @@ import { useSearchParams } from "next/navigation";
 
 type AnyJson = any;
 
+async function readJsonSafe(res: Response) {
+  const text = await res.text().catch(() => "");
+  try {
+    return text ? JSON.parse(text) : null;
+  } catch {
+    return { raw: text };
+  }
+}
+
 export default function UploadPage() {
   const sp = useSearchParams();
   const tFromUrl = sp.get("t") || "";
@@ -23,45 +32,48 @@ export default function UploadPage() {
     }
   }, [lastRun]);
 
-  async function createApplication(): Promise<string> {
-    const res = await fetch("/api/applications/create", { method: "POST" });
-    const data = await res.json();
+  function withToken(path: string) {
+    const token = (t || "").trim();
+    if (!token) return path;
+    const join = path.includes("?") ? "&" : "?";
+    return `${path}${join}t=${encodeURIComponent(token)}`;
+  }
 
-    if (!data?.appId || typeof data.appId !== "string") {
+  async function createApplication(): Promise<string> {
+    const url = withToken("/api/applications/create");
+    const res = await fetch(url, { method: "POST", cache: "no-store" });
+    const data = await readJsonSafe(res);
+
+    setLastRun({ createApplication: { url, status: res.status, body: data } });
+
+    if (!res.ok) {
+      throw new Error(`Application create failed (${res.status})`);
+    }
+
+    const newAppId = data?.appId;
+    if (!newAppId || typeof newAppId !== "string") {
       throw new Error("Application creation failed: missing appId");
     }
 
-    setAppId(data.appId);
-    return data.appId;
+    setAppId(newAppId);
+    return newAppId;
   }
 
   async function runTickOnce() {
     const token = (t || "").trim();
-
-    // If token is missing, we still run tick, but it will only tick existing jobs.
     const url = token
       ? `/api/debug/run?t=${encodeURIComponent(token)}&mode=tick`
       : `/api/debug/run?mode=tick`;
 
     const res = await fetch(url, { cache: "no-store" });
-    const text = await res.text();
-    let data: any = null;
-    try {
-      data = text ? JSON.parse(text) : null;
-    } catch {
-      data = { raw: text };
-    }
+    const data = await readJsonSafe(res);
 
-    setLastRun(data);
+    setLastRun((prev: any) => ({ ...(prev || {}), tick: { url, status: res.status, body: data } }));
 
-    if (!res.ok) {
-      throw new Error(`Tick failed (${res.status}): ${text}`);
-    }
+    if (!res.ok) throw new Error(`Tick failed (${res.status})`);
 
-    // If the API returns ok=false, surface that clearly
-    if (data && data.ok === false) {
-      throw new Error(`Tick returned ok=false: ${data.error || "unknown error"}`);
-    }
+    // Some pages treat ok=false as a hard failure
+    if (data && data.ok === false) throw new Error(`Tick returned ok=false: ${data.error || "unknown"}`);
 
     return data;
   }
@@ -70,17 +82,10 @@ export default function UploadPage() {
     for (let i = 1; i <= maxTicks; i++) {
       setStatus(`Tick ${i}/${maxTicks}...`);
       try {
-        const data = await runTickOnce();
-
-        // If a run processed an app, great — keep going a couple more ticks
-        // so it can advance stages.
-        // If nothing processed, we still continue a few ticks.
-        void data;
+        await runTickOnce();
       } catch (e: any) {
-        // show error but keep looping a couple times (transient errors happen)
         setStatus(`Tick ${i}/${maxTicks} error: ${String(e?.message || e)}`);
       }
-
       await new Promise((r) => setTimeout(r, delayMs));
     }
   }
@@ -101,22 +106,23 @@ export default function UploadPage() {
     formData.append("file", file);
     formData.append("appId", id);
 
-    const uploadRes = await fetch("/api/upload", {
+    // IMPORTANT: include demo token on upload too
+    const uploadUrl = withToken("/api/upload");
+
+    const uploadRes = await fetch(uploadUrl, {
       method: "POST",
       body: formData,
     });
 
-    const uploadText = await uploadRes.text().catch(() => "");
-    let uploadJson: any = null;
-    try {
-      uploadJson = uploadText ? JSON.parse(uploadText) : null;
-    } catch {
-      uploadJson = { raw: uploadText };
-    }
-    setLastRun({ upload: { status: uploadRes.status, body: uploadJson } });
+    const uploadBody = await readJsonSafe(uploadRes);
+
+    setLastRun((prev: any) => ({
+      ...(prev || {}),
+      upload: { url: uploadUrl, status: uploadRes.status, body: uploadBody },
+    }));
 
     if (!uploadRes.ok) {
-      throw new Error(`Upload failed (${uploadRes.status}): ${uploadText}`);
+      throw new Error(`Upload failed (${uploadRes.status})`);
     }
 
     setStatus("Upload OK (now run Tick).");
@@ -126,8 +132,8 @@ export default function UploadPage() {
     try {
       await uploadOnly();
       setStatus("Running ticks...");
-      await runTickLoop(8, 900);
-      setStatus("Done. Scroll down and copy the JSON if needed.");
+      await runTickLoop(10, 900);
+      setStatus("Done. If Status is still parsing, click Auto Process again once.");
     } catch (err: any) {
       console.error(err);
       setStatus(`Error: ${String(err?.message || err)}`);
@@ -158,11 +164,7 @@ export default function UploadPage() {
         </div>
 
         <div style={{ marginTop: 12 }}>
-          <input
-            type="file"
-            accept="application/pdf"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
+          <input type="file" accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         </div>
 
         <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -186,27 +188,12 @@ export default function UploadPage() {
           <button
             onClick={async () => {
               setStatus("Running ticks...");
-              await runTickLoop(8, 900);
+              await runTickLoop(10, 900);
               setStatus("Done ticking.");
             }}
             style={{ padding: "10px 14px" }}
           >
-            2) Run Tick (x8)
-          </button>
-
-          <button
-            onClick={async () => {
-              setStatus("Ticking once...");
-              try {
-                await runTickOnce();
-                setStatus("Tick complete.");
-              } catch (e: any) {
-                setStatus(`Tick error: ${String(e?.message || e)}`);
-              }
-            }}
-            style={{ padding: "10px 14px" }}
-          >
-            Tick Once
+            2) Run Tick (x10)
           </button>
         </div>
 
