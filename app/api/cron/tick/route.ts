@@ -4,22 +4,22 @@ import { initAdmin } from "@/lib/firebase-admin";
 export const runtime = "nodejs";
 
 function isVercelCron(req: Request) {
-  // Vercel sets this header for cron invocations
+  // Vercel sets this on scheduled cron invocations
   const v = req.headers.get("x-vercel-cron");
   return !!v;
 }
 
 function requireCronAuth(req: Request) {
+  // ✅ If this is an actual Vercel cron invocation, allow it even if CRON_SECRET is missing.
+  if (isVercelCron(req)) return;
+
+  // Manual calls require ?secret= AND a configured CRON_SECRET
   const secret = String(process.env.CRON_SECRET || "").trim();
   if (!secret) throw new Error("401: Unauthorized (missing CRON_SECRET + not a Vercel cron request)");
 
-  // Allow either:
-  // 1) Real Vercel Cron invocation (x-vercel-cron present)
-  // 2) Manual call with ?secret= for testing
   const url = new URL(req.url);
-  const got = (url.searchParams.get("secret") || "").trim();
+  const got = String(url.searchParams.get("secret") || "").trim();
 
-  if (isVercelCron(req)) return;
   if (got && got === secret) return;
 
   throw new Error("401: Unauthorized (not vercel cron and missing/invalid ?secret=)");
@@ -36,16 +36,17 @@ export async function GET(req: Request) {
     const { db, admin } = initAdmin();
     const now = admin.firestore.Timestamp.now();
 
-    // 🔥 Heartbeat: write a tiny marker that cron ran
+    // Heartbeat marker: proves cron ran
     await db.collection("_system").doc("cron").set(
       {
         lastCronTickAt: now,
         lastCronTickIso: now.toDate().toISOString(),
+        via: isVercelCron(req) ? "vercel-cron" : "manual-secret",
       },
       { merge: true }
     );
 
-    // Call the tick runner internally (same origin call)
+    // Trigger tick runner
     const url = new URL(req.url);
     const t = url.searchParams.get("t") || "";
     const tickUrl = new URL("/api/debug/run", url.origin);
