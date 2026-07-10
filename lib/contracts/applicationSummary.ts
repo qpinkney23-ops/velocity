@@ -28,7 +28,8 @@ export type CompatibilityWarningCode =
   | "missing_tenant" | "invalid_tenant" | "legacy_record" | "missing_borrower_name"
   | "missing_timestamp" | "invalid_timestamp" | "invalid_money" | "ambiguous_money"
   | "unknown_application_status" | "unknown_readiness_status" | "unknown_decision_status"
-  | "unknown_processing_stage" | "invalid_underwriter_id" | "invalid_count_source";
+  | "unknown_processing_stage" | "invalid_underwriter_id" | "invalid_count_source"
+  | "parser_failure";
 
 export type CompatibilityWarning = Readonly<{
   code: CompatibilityWarningCode;
@@ -96,6 +97,24 @@ export type ApplicationSummaryParseResult =
   | Readonly<{ ok: true; value: CanonicalApplicationSummary }>
   | Readonly<{ ok: false; code: "invalid_record" | "invalid_application_id"; message: string }>;
 
+export type ApplicationsPageDisplayRow = Readonly<{
+  rowKey: string;
+  routeId?: string;
+  summary: CanonicalApplicationSummary | null;
+  borrowerName: string;
+  coBorrowerName?: string;
+  email: string;
+  loanNumber: string;
+  loanAmountCents: number | null;
+  status: string;
+  underwriterId: string;
+  uwName: string;
+  uwEmail: string;
+  updatedMs: number;
+  compatibilityWarnings: readonly CompatibilityWarning[];
+  degraded: boolean;
+}>;
+
 type UnknownRecord = Record<string, unknown>;
 
 function warning(code: CompatibilityWarningCode, field: string, message: string): CompatibilityWarning {
@@ -104,6 +123,56 @@ function warning(code: CompatibilityWarningCode, field: string, message: string)
 
 function record(value: unknown): UnknownRecord | null {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as UnknownRecord : null;
+}
+
+export function projectApplicationSummaryForApplicationsPage(
+  summary: CanonicalApplicationSummary
+): ApplicationsPageDisplayRow {
+  const parity = summary.compatibility.pageParity;
+  return Object.freeze({
+    rowKey: summary.applicationId,
+    routeId: summary.applicationId,
+    summary,
+    borrowerName: parity.borrowerName,
+    ...(summary.coBorrowerDisplayName ? { coBorrowerName: summary.coBorrowerDisplayName } : {}),
+    email: parity.email,
+    loanNumber: summary.loanNumber ?? "",
+    loanAmountCents: summary.loanAmount?.cents ?? null,
+    status: parity.statusDisplay,
+    underwriterId: summary.assignedUnderwriterId ?? "",
+    uwName: parity.underwriterDisplay,
+    uwEmail: parity.underwriterEmail,
+    updatedMs: parity.updatedMs,
+    compatibilityWarnings: summary.compatibility.warnings,
+    degraded: false,
+  });
+}
+
+export function createDegradedApplicationsPageRow(
+  input: unknown,
+  rowIndex: number
+): ApplicationsPageDisplayRow {
+  const raw = record(input);
+  const safeId = validateApplicationId(raw?.id);
+  const routeId = safeId.ok ? safeId.value : undefined;
+  return Object.freeze({
+    rowKey: routeId ?? `degraded-${rowIndex}`,
+    ...(routeId ? { routeId } : {}),
+    summary: null,
+    borrowerName: "Compatibility issue",
+    email: "—",
+    loanNumber: "",
+    loanAmountCents: null,
+    status: "Compatibility issue",
+    underwriterId: "",
+    uwName: "Unassigned",
+    uwEmail: "",
+    updatedMs: 0,
+    compatibilityWarnings: Object.freeze([
+      warning("parser_failure", "record", "Application record could not be safely normalized."),
+    ]),
+    degraded: true,
+  });
 }
 
 function optionalString(value: unknown): string | undefined {

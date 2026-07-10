@@ -135,6 +135,10 @@ function fixtures() {
 function noProductionImports() {
   const roots = ["app", "components", "lib"];
   const violations: string[] = [];
+  const allowedProductionImports = ["app/applications/page.tsx"] as const;
+  const importSetIsAllowed = (imports: readonly string[]) =>
+    imports.length === allowedProductionImports.length &&
+    imports.every((item, index) => item === allowedProductionImports[index]);
   const visit = (relative: string) => {
     for (const entry of fs.readdirSync(relative, { withFileTypes: true })) {
       const child = path.join(relative, entry.name);
@@ -150,7 +154,17 @@ function noProductionImports() {
     }
   };
   roots.forEach(visit);
-  assert(violations.length === 0, `production contract imports found: ${violations.join(", ")}`);
+  const normalized = violations.map((item) => item.replace(/\\/g, "/")).sort();
+  assert(importSetIsAllowed(normalized), `unexpected production contract imports found: ${normalized.join(", ")}`);
+  assert(importSetIsAllowed(["app/applications/page.tsx"]), "applications page is explicitly allowed");
+  assert(
+    !importSetIsAllowed(["app/applications/page.tsx", "app/dashboard/page.tsx"]),
+    "a second production import must fail the allowlist"
+  );
+  assert(
+    ["scripts", "tests", "docs"].every((root) => !roots.includes(root)),
+    "scripts, tests, and docs remain outside production import enforcement"
+  );
 }
 
 const tests = [
@@ -158,7 +172,7 @@ const tests = [
   ["timestamps", timestamps], ["money", money],
   ["ratio representations", ratioRepresentations],
   ["method-aware provenance", provenanceMethods], ["legacy fixtures", fixtures],
-  ["no production imports", noProductionImports],
+  ["only the approved production import is allowed", noProductionImports],
 ] as const;
 let passed = 0; const failures: string[] = [];
 for (const [name, test] of tests) {

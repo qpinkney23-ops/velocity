@@ -5,6 +5,13 @@ import { useRouter } from "next/navigation";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/components/ui/ToastProvider";
+import {
+  createDegradedApplicationsPageRow,
+  parseLegacyApplicationSummary,
+  projectApplicationSummaryForApplicationsPage,
+  type ApplicationsPageDisplayRow,
+  type CompatibilityWarning,
+} from "@/lib/contracts";
 
 type Underwriter = {
   id: string;
@@ -30,16 +37,9 @@ type AppRow = {
   scan?: { extracted?: ScanExtracted } | null;
 };
 
-function money(n?: number) {
-  const v = typeof n === "number" && Number.isFinite(n) ? n : 0;
-  return `$${Math.round(v).toLocaleString()}`;
-}
-
-function tsToMs(ts: any): number {
-  if (!ts) return 0;
-  const d = typeof ts?.toDate === "function" ? ts.toDate() : null;
-  if (!d || !(d instanceof Date) || isNaN(d.getTime())) return 0;
-  return d.getTime();
+function moneyFromCents(cents?: number | null) {
+  if (typeof cents !== "number" || !Number.isFinite(cents)) return "—";
+  return `$${Math.round(cents / 100).toLocaleString()}`;
 }
 
 function initials(name: string, email: string) {
@@ -92,6 +92,19 @@ function tabFromStatus(status: string) {
   return "All";
 }
 
+function visibleCompatibilityWarnings(warnings: readonly CompatibilityWarning[]) {
+  return warnings.filter((warning) => warning.code !== "legacy_record");
+}
+
+function compatibilityLabel(warnings: readonly CompatibilityWarning[]) {
+  const codes = new Set(warnings.map((warning) => warning.code));
+  if (codes.has("parser_failure")) return "Record compatibility error";
+  if (codes.has("missing_tenant") || codes.has("invalid_tenant")) return "Missing tenant ownership";
+  if (codes.has("invalid_money") || codes.has("ambiguous_money")) return "Invalid legacy amount";
+  if (codes.has("unknown_application_status")) return "Unknown legacy status";
+  return "Compatibility warning";
+}
+
 export default function ApplicationsPage() {
   const router = useRouter();
   const { toast } = useToast();
@@ -137,37 +150,20 @@ export default function ApplicationsPage() {
     return () => unsub();
   }, []);
 
-  const uwMap = useMemo(() => {
-    const m = new Map<string, Underwriter>();
-    for (const u of underwriters) m.set(u.id, u);
-    return m;
-  }, [underwriters]);
-
-  // ✅ THE FIX: never show “Unknown borrower / missing email” if scan extracted exists
+  // One read-only compatibility adapter now supplies the page display model.
   const normalized = useMemo(() => {
-    return apps.map((a) => {
-      const scanBorrower = (a.scan?.extracted?.borrower || "").toString().trim();
-      const scanEmail = (a.scan?.extracted?.email || "").toString().trim();
+    const underwriterLookup = underwriters.map((underwriter) => ({
+      id: underwriter.id,
+      name: underwriter.name,
+      email: underwriter.email,
+    }));
 
-      const borrowerName = (a.borrowerName || "").toString().trim() || scanBorrower || "Borrower";
-      const email = (a.email || "").toString().trim() || scanEmail || "—";
-
-      const updatedMs = Math.max(tsToMs(a.updatedAt), tsToMs(a.createdAt));
-
-      const uw = a.underwriterId ? uwMap.get(a.underwriterId) : null;
-      const uwName = uw?.name || uw?.email || (a.underwriterId ? "Assigned" : "Unassigned");
-      const uwEmail = uw?.email || "";
-
-      return {
-        ...a,
-        borrowerName,
-        email,
-        updatedMs,
-        uwName,
-        uwEmail,
-      };
+    return apps.map((a, index): ApplicationsPageDisplayRow => {
+      const parsed = parseLegacyApplicationSummary(a, { underwriters: underwriterLookup });
+      if (!parsed.ok) return createDegradedApplicationsPageRow(a, index);
+      return projectApplicationSummaryForApplicationsPage(parsed.value);
     });
-  }, [apps, uwMap]);
+  }, [apps, underwriters]);
 
   const counts = useMemo(() => {
     const c = { All: 0, New: 0, "UW Review": 0, Conditions: 0, Approved: 0, Denied: 0 } as Record<string, number>;
@@ -195,14 +191,16 @@ export default function ApplicationsPage() {
       return (
         (a.borrowerName || "").toLowerCase().includes(q) ||
         (a.email || "").toLowerCase().includes(q) ||
+        (a.loanNumber || "").toLowerCase().includes(q) ||
         (a.status || "").toLowerCase().includes(q) ||
-        uw.toLowerCase().includes(q)
+        uw.toLowerCase().includes(q) ||
+        (a.uwEmail || "").toLowerCase().includes(q)
       );
     });
   }, [normalized, tab, search]);
 
   const totalVolume = useMemo(() => {
-    return normalized.reduce((acc, a: any) => acc + (typeof a.loanAmount === "number" ? a.loanAmount : 0), 0);
+    return normalized.reduce((acc, application) => acc + (application.loanAmountCents ?? 0), 0);
   }, [normalized]);
 
   return (
@@ -248,7 +246,7 @@ export default function ApplicationsPage() {
 
           <div className="flex items-center gap-2 flex-wrap">
             <span className="v-chip">{filtered.length} shown</span>
-            <span className="v-chip">{money(totalVolume)} volume</span>
+            <span className="v-chip">{moneyFromCents(totalVolume)} volume</span>
           </div>
         </div>
       </div>
@@ -273,8 +271,10 @@ export default function ApplicationsPage() {
             </thead>
 
             <tbody>
-              {filtered.map((a: any) => (
-                <tr key={a.id} className="border-b last:border-b-0" style={{ borderColor: "var(--v-border)" }}>
+              {filtered.map((a) => {
+                const compatibilityWarnings = visibleCompatibilityWarnings(a.compatibilityWarnings);
+                return (
+                <tr key={a.rowKey} className="border-b last:border-b-0" style={{ borderColor: "var(--v-border)" }}>
                   <td className="p-3">
                     <div className="flex items-center gap-3">
                       <div
@@ -290,14 +290,25 @@ export default function ApplicationsPage() {
                       </div>
                       <div className="min-w-0">
                         <div className="font-medium truncate">{a.borrowerName}</div>
-                        <div className="text-xs v-muted truncate">{`ID: ${a.id}`}</div>
+                        {a.coBorrowerName ? (
+                          <div className="text-xs v-muted truncate">Co-borrower: {a.coBorrowerName}</div>
+                        ) : null}
+                        <div className="text-xs v-muted truncate">{a.routeId ? `ID: ${a.routeId}` : "ID unavailable"}</div>
+                        {compatibilityWarnings.length ? (
+                          <div
+                            className="text-xs text-amber-700 truncate"
+                            title={compatibilityWarnings.map((warning) => warning.message).join(" ")}
+                          >
+                            {compatibilityLabel(compatibilityWarnings)}
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   </td>
 
                   <td className="p-3">{a.email}</td>
 
-                  <td className="p-3">{money(a.loanAmount)}</td>
+                  <td className="p-3">{moneyFromCents(a.loanAmountCents)}</td>
 
                   <td className="p-3">
                     <StatusChip status={(a.status || "New").toString()} />
@@ -325,12 +336,17 @@ export default function ApplicationsPage() {
                   </td>
 
                   <td className="p-3 text-right">
-                    <button className="v-btn" onClick={() => router.push(`/applications/${a.id}`)}>
+                    <button
+                      className="v-btn"
+                      disabled={!a.routeId}
+                      onClick={() => a.routeId && router.push(`/applications/${a.routeId}`)}
+                    >
                       View
                     </button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
 
               {!loading && filtered.length === 0 && (
                 <tr>

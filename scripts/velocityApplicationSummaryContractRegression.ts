@@ -118,7 +118,7 @@ function compatibilityMetadata() {
   assert(legacy.compatibility.warnings.length > 0, "compatibility warnings retained");
 }
 
-function noProductionImports() {
+function onlyApprovedProductionImport() {
   const violations: string[] = [];
   const visit = (relative: string) => {
     for (const entry of fs.readdirSync(relative, { withFileTypes: true })) {
@@ -133,7 +133,11 @@ function noProductionImports() {
     }
   };
   ["app", "components", "lib"].forEach(visit);
-  assert(violations.length === 0, `production imports found: ${violations.join(", ")}`);
+  const normalized = violations.map((item) => item.replace(/\\/g, "/"));
+  assert(
+    normalized.length === 1 && normalized[0] === "app/applications/page.tsx",
+    `unexpected production imports found: ${normalized.join(", ")}`
+  );
 }
 
 const tests = [
@@ -144,7 +148,7 @@ const tests = [
   ["borrower and analysis fields retain meaning", borrowerAndAnalysis],
   ["applications-page visible values retain parity", pageParity],
   ["legacy metadata and warnings remain explicit", compatibilityMetadata],
-  ["no production file imports the adapter", noProductionImports],
+  ["only the approved applications page imports the adapter", onlyApprovedProductionImport],
 ] as const;
 
 let passed = 0; const failures: string[] = [];
