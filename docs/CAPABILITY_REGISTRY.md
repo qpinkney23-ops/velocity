@@ -10,26 +10,230 @@ This registry is dependency-ordered. IDs are permanent and are never renumbered 
 
 ## CORE-001 — Canonical Enterprise Data Contracts
 
-ID: `CORE-001`  
-Title: Canonical Enterprise Data Contracts  
-Category: CORE  
-Priority: P0  
-Status: Partial  
-Customer Value: One consistent loan file across every screen and output.  
-Business Value: Removes rework and creates a stable development/integration foundation.  
-Problem Solved: Application, extraction, analysis, condition, readiness, and report shapes currently overlap and diverge.  
-Description: Version canonical schemas, identifiers, nullability, provenance, and compatibility rules for tenant, user, application, document, evidence, normalized value, calculation, condition, decision, readiness, job, audit event, and report artifact.  
-Dependencies: None.  
-Likely Files: `lib/ai/applicationAnalysisSchema.ts`, `lib/workflow.ts`, new schema/migration modules, Firestore documentation.  
-Acceptance Tests: Every production producer and consumer validates the same versioned contracts; invalid payloads fail closed; persisted legacy records have an explicit compatibility path.  
-Regression Tests: Schema fixtures, round-trip serialization, backward-compatibility corpus, contract tests across UI/API/worker/report.  
-Complexity: Very High  
-Definition of Done: Contracts, ownership, versions, migrations, validators, and deprecation policy are implemented and documented.  
-Lock Criteria: No competing production schema; all supported fixtures pass; architecture and QA approvals recorded.  
-Evidence Required: Schema definitions, compatibility matrix, migration results, contract-test output, architecture sign-off.  
-Notes: Foundation for all later capabilities.
+ID: `CORE-001`
 
-## CORE-002 — Tenant-Scoped Application System of Record
+Title: Canonical Enterprise Data Contracts
+
+Category: CORE
+
+Priority: P0
+
+Status: PARTIAL
+
+Customer Value:  
+Every Velocity screen, queue, report, export, API, and worker displays and uses the same authoritative loan-file information.
+
+Business Value:  
+Creates a stable foundation for security, underwriting, integrations, auditability, testing, and future customer onboarding. Eliminates repeated rewrites caused by incompatible data shapes.
+
+Problem Solved:  
+Velocity currently has overlapping or potentially divergent representations of applications, extracted fields, underwriting analysis, conditions, readiness, decisions, reports, and workflow state. Different producers and consumers may interpret or persist the same information differently.
+
+Description:  
+Define, version, validate, and document the canonical production contracts used throughout Velocity.
+
+CORE-001 must establish authoritative contracts for:
+
+- tenant
+- user
+- role and permission assignment
+- application
+- borrower and co-borrower
+- document
+- document-processing result
+- evidence item
+- normalized field value
+- source attribution
+- conflict
+- income result
+- asset result
+- liability result
+- credit result
+- PITIA result
+- DTI result
+- LTV result
+- condition
+- decision
+- readiness result
+- workflow status
+- assignment
+- processing job
+- audit event
+- decision package
+- report artifact
+
+Each canonical contract must define:
+
+- permanent identifiers
+- required and optional fields
+- nullability
+- enumerated values
+- monetary units
+- percentage representation
+- date and timestamp format
+- source and evidence references
+- confidence representation
+- conflict representation
+- assumption labeling
+- tenant ownership
+- schema version
+- producer
+- creation time
+- update time where permitted
+- compatibility expectations
+
+Scope Boundaries:
+
+- This capability defines and validates contracts.
+- It must not redesign underwriting policy.
+- It must not change mortgage calculations unless necessary to preserve an existing value correctly.
+- It must not redesign the user interface.
+- It must not perform a broad Firestore migration without a separately reviewed migration plan.
+- It must not remove legacy compatibility until all production consumers have migrated.
+- Existing supported behavior must remain functional during migration.
+
+Dependencies:  
+None.
+
+Likely Files:
+
+- `lib/ai/applicationAnalysisSchema.ts`
+- `lib/ai/analyzeApplication.ts`
+- `lib/ai/buildUnderwritingReport.ts`
+- `lib/extractFields.ts`
+- `lib/workflow.ts`, if present
+- application analyze/report API routes
+- application detail and queue consumers
+- new `lib/contracts/` modules
+- new compatibility adapter modules
+- new schema fixtures and contract tests
+- Firestore data-model documentation
+
+The exact file list must be determined by repository inspection before implementation.
+
+Required Deliverables:
+
+1. Contract inventory showing every existing producer, consumer, and persisted shape.
+2. Canonical versioned contract definitions.
+3. Runtime validation at system boundaries.
+4. Legacy-to-canonical compatibility adapters.
+5. Canonical-to-persisted serialization rules.
+6. Explicit migration and deprecation strategy.
+7. Contract fixtures representing supported loan-file scenarios.
+8. Automated contract and round-trip tests.
+9. Documentation of ownership for every canonical value.
+10. Documentation of fields that remain intentionally unresolved or legacy.
+
+Acceptance Tests:
+
+1. Every authoritative production analysis result includes a schema version.
+2. Every authoritative application record includes tenant ownership.
+3. Every monetary value has one documented unit and representation.
+4. Every percentage has one documented representation and rounding rule.
+5. Every derived underwriting value can retain:
+   - inputs
+   - source references
+   - assumptions
+   - calculation method
+   - engine version
+6. Every normalized field can retain:
+   - selected value
+   - candidate values
+   - winning source
+   - confidence
+   - conflicts
+   - verification state
+7. Conditions have stable IDs and one canonical lifecycle model.
+8. Decisions and readiness results use canonical enumerations.
+9. Invalid new payloads fail validation at production boundaries.
+10. Legacy supported records continue to load through an explicit compatibility adapter.
+11. UI, API, worker, queue, and report consumers can read the same canonical fixture without shape-specific reinterpretation.
+12. Reports consume the canonical analysis or decision package and do not independently recreate underwriting results.
+13. No second competing canonical production schema is introduced.
+14. Existing supported regression scenarios continue to pass.
+15. Validation errors do not expose borrower PII or secrets.
+
+Regression Tests:
+
+- round-trip serialization and deserialization
+- canonical fixture validation
+- invalid-payload rejection
+- missing-field and nullability tests
+- legacy-record compatibility tests
+- borrower and co-borrower fixtures
+- W-2 income fixture
+- self-employed income fixture
+- liability and credit fixture
+- DTI/PITIA/LTV fixture
+- condition lifecycle fixture
+- decision and readiness fixture
+- API producer-to-consumer contract tests
+- worker-to-persistence contract tests
+- persistence-to-report contract tests
+- UI consumer fixture tests
+
+Complexity:  
+VERY HIGH
+
+Implementation Strategy:
+
+1. Inventory current contracts and data flow.
+2. Identify the current closest-to-canonical production shape.
+3. Propose the canonical v1 contract boundary.
+4. Add validators and fixtures without changing behavior.
+5. Add compatibility adapters.
+6. Migrate one producer and one consumer at a time.
+7. Run regression tests after each migration.
+8. Remove competing production shapes only after proven parity.
+9. Document remaining legacy paths.
+10. Request lock review only after every supported production path uses the canonical contracts.
+
+Definition of Done:
+
+- Canonical v1 contracts exist and are documented.
+- Runtime validation protects production boundaries.
+- Legacy compatibility is explicit and tested.
+- All supported production producers and consumers use canonical contracts or approved adapters.
+- Persisted records include required ownership and version information.
+- Existing supported behavior remains intact.
+- Contract tests run as part of the project quality gate.
+- No undocumented production contract remains.
+- No competing authoritative schema remains.
+
+Lock Criteria:
+
+- All acceptance tests pass.
+- All contract regressions pass.
+- The production build passes.
+- Existing Velocity regression suites pass.
+- Producer and consumer inventory is complete.
+- Compatibility matrix is complete.
+- Migration evidence is recorded.
+- No unresolved P0 contract ambiguity remains.
+- Architecture review confirms one canonical production contract system.
+- QA review confirms no supported workflow regression.
+- Product review confirms no mortgage-policy behavior was invented or silently altered.
+
+Evidence Required:
+
+- current-state contract inventory
+- producer/consumer dependency map
+- canonical schema definitions
+- schema-version documentation
+- compatibility matrix
+- migration plan and migration results
+- fixture corpus
+- contract-test output
+- existing regression-suite output
+- production-build output
+- changed-file list
+- known limitations
+- architecture approval
+- QA approval
+- Product Lock approval
+
+Notes:  
+This is the foundation for tenant isolation, security, underwriting consolidation, auditability, integrations, durable operations, and reproducible reports. CORE-001 must be implemented incrementally. It must not become an uncontrolled whole-repository rewrite.## CORE-002 — Tenant-Scoped Application System of Record
 
 ID: `CORE-002`  
 Title: Tenant-Scoped Application System of Record  
