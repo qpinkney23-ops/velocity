@@ -44,6 +44,7 @@
     "tesseract.js": "^5.1.1"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
     "@types/node": "^20.19.33",
     "@types/pdf-parse": "^1.1.5",
     "@types/react": "^18",
