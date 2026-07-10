@@ -1,0 +1,47 @@
+// TEST ONLY. NOT DEPLOYABLE PRODUCTION RULES.
+// Temporary conservative assumptions: owner/processor may create/update;
+// underwriter/viewer are read-only; all membership and user-role writes deny.
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function memberPath(tenantId, uid) {
+      return /databases/$(database)/documents/tenants/$(tenantId)/members/$(uid);
+    }
+    function activeClientMember(tenantId) {
+      let m = get(memberPath(tenantId, request.auth.uid)).data;
+      return request.auth != null && m.membershipStatus == "active" &&
+        m.tenantId == tenantId && m.userId == request.auth.uid &&
+        m.role in ["owner", "processor", "underwriter", "viewer"];
+    }
+    function canCreateApplication(tenantId) {
+      return activeClientMember(tenantId) &&
+        get(memberPath(tenantId, request.auth.uid)).data.role in ["owner", "processor"];
+    }
+
+    match /tenants/{tenantId} {
+      allow read: if activeClientMember(tenantId);
+      allow write: if false;
+      match /members/{userId} {
+        allow read: if request.auth != null && request.auth.uid == userId && activeClientMember(tenantId);
+        allow write: if false;
+      }
+    }
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
+    }
+    match /applications/{applicationId} {
+      allow read: if resource.data.ownershipState == "tenant_owned" && activeClientMember(resource.data.tenantId);
+      allow create: if request.resource.data.ownershipState == "tenant_owned" &&
+        canCreateApplication(request.resource.data.tenantId) && request.resource.data.createdBy == request.auth.uid;
+      allow update: if canCreateApplication(resource.data.tenantId) &&
+        request.resource.data.tenantId == resource.data.tenantId &&
+        request.resource.data.createdBy == resource.data.createdBy &&
+        request.resource.data.ownershipState == resource.data.ownershipState;
+      allow delete: if false;
+    }
+    match /legacyApplications/{legacyId} { allow read, write: if false; }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
+

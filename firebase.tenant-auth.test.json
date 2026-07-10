@@ -1,0 +1,15 @@
+{
+  "_comment": "TEST ONLY. Never use this file for deployment.",
+  "firestore": {
+    "rules": "tests/tenant-authorization/firestore.test.rules"
+  },
+  "storage": {
+    "rules": "tests/tenant-authorization/storage.test.rules"
+  },
+  "emulators": {
+    "firestore": { "port": 8180 },
+    "storage": { "port": 9299 },
+    "ui": { "enabled": false }
+  }
+}
+

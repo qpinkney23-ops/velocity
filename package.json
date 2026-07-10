@@ -13,6 +13,7 @@
     "velocity:workflow": "npx tsx scripts/velocityWorkflowRegression.ts",
     "velocity:report": "npx tsx scripts/velocityReportRegression.ts",
     "velocity:ocr": "npx tsx scripts/velocityOcrRegression.ts",
+    "velocity:tenant-auth": "npx tsx scripts/velocityTenantAuthorizationRegression.ts",
     "velocity:regressions": "npx tsx scripts/velocityRegressionSuite.ts",
     "velocity:check": "npm run build && npm run velocity:regressions"
   },
