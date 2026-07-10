@@ -11,7 +11,6 @@ import {
   serverTimestamp,
   updateDoc,
   doc,
-  addDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/components/ui/ToastProvider";
@@ -31,19 +30,29 @@ type AppRow = {
   loanAmount?: number;
   status?: string;
   underwriterId?: string;
-  scan?: { extracted?: { borrower?: string; email?: string } } | null;
+  scan?: {
+    extracted?: {
+      borrower?: string;
+      email?: string;
+    };
+  } | null;
   createdAt?: any;
   updatedAt?: any;
 };
 
-function chip(kind: "ok" | "muted" | "warn") {
+function chip(kind: "ok" | "muted" | "warn" | "blue") {
   if (kind === "ok") return "bg-green-50 border-green-200 text-green-800";
   if (kind === "warn") return "bg-amber-50 border-amber-200 text-amber-800";
+  if (kind === "blue") return "bg-blue-50 border-blue-200 text-blue-800";
   return "bg-gray-100 border-gray-200 text-gray-700";
 }
 
-function Chip({ label, kind }: { label: string; kind: "ok" | "muted" | "warn" }) {
-  return <span className={`inline-flex items-center px-2 py-1 rounded-md border text-xs ${chip(kind)}`}>{label}</span>;
+function Chip({ label, kind }: { label: string; kind: "ok" | "muted" | "warn" | "blue" }) {
+  return (
+    <span className={`inline-flex items-center px-2 py-1 rounded-md border text-xs ${chip(kind)}`}>
+      {label}
+    </span>
+  );
 }
 
 function money(n?: number) {
@@ -51,8 +60,9 @@ function money(n?: number) {
   return `$${Math.round(v).toLocaleString()}`;
 }
 
-function rand(min: number, max: number) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+function pct(value: number, total: number) {
+  if (!total) return "0%";
+  return `${Math.round((value / total) * 100)}%`;
 }
 
 export default function AdminPage() {
@@ -61,8 +71,9 @@ export default function AdminPage() {
   const [underwriters, setUnderwriters] = useState<Underwriter[]>([]);
   const [apps, setApps] = useState<AppRow[]>([]);
   const [busy, setBusy] = useState(false);
+  const [billingBusy, setBillingBusy] = useState(false);
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
 
-  // Underwriters live
   useEffect(() => {
     const q = query(collection(db, "underwriters"), orderBy("createdAt", "desc"));
     const unsub = onSnapshot(
@@ -74,10 +85,10 @@ export default function AdminPage() {
       },
       () => {}
     );
+
     return () => unsub();
   }, []);
 
-  // Applications live (for stats)
   useEffect(() => {
     const q = query(collection(db, "applications"), orderBy("updatedAt", "desc"), limit(200));
     const unsub = onSnapshot(
@@ -89,6 +100,7 @@ export default function AdminPage() {
       },
       () => {}
     );
+
     return () => unsub();
   }, []);
 
@@ -99,69 +111,32 @@ export default function AdminPage() {
     const missingBorrower = apps.filter((a) => !(a.borrowerName || "").toString().trim()).length;
     const missingEmail = apps.filter((a) => !(a.email || "").toString().trim()).length;
 
+    const assigned = apps.filter((a) => !!(a.underwriterId || "").toString().trim()).length;
+    const unassigned = totalApps - assigned;
+
     const canBackfill = apps.filter((a) => {
       const bnMissing = !(a.borrowerName || "").toString().trim();
       const emMissing = !(a.email || "").toString().trim();
       const sb = (a.scan?.extracted?.borrower || "").toString().trim();
       const se = (a.scan?.extracted?.email || "").toString().trim();
+
       return (bnMissing && sb) || (emMissing && se);
     }).length;
 
-    return { totalApps, totalVol, missingBorrower, missingEmail, canBackfill };
-  }, [apps]);
+    const activeUnderwriters = underwriters.filter((u) => u.active !== false).length;
 
-  async function seedDemoData() {
-    if (busy) return;
-    setBusy(true);
-
-    try {
-      // Create a few underwriters if none exist
-      const uwSnap = await getDocs(query(collection(db, "underwriters"), limit(1)));
-      if (uwSnap.empty) {
-        const demoUWs = [
-          { name: "A. Underwriter", email: "uw.alpha@velocity.demo", active: true },
-          { name: "B. Underwriter", email: "uw.bravo@velocity.demo", active: true },
-          { name: "C. Underwriter", email: "uw.charlie@velocity.demo", active: true },
-        ];
-
-        for (const u of demoUWs) {
-          await addDoc(collection(db, "underwriters"), {
-            ...u,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-        }
-      }
-
-      // Create a few applications (lightweight)
-      const names = ["Jordan Smith", "Taylor Johnson", "Casey Brown", "Morgan Davis", "Avery Wilson"];
-      const statuses = ["New", "UW Review", "Conditions", "Approved"];
-      for (let i = 0; i < 5; i++) {
-        const borrowerName = names[rand(0, names.length - 1)];
-        const email = borrowerName.toLowerCase().replace(/\s+/g, ".") + "@demo.com";
-        const loanAmount = rand(120000, 650000);
-        const status = statuses[rand(0, statuses.length - 1)];
-
-        await addDoc(collection(db, "applications"), {
-          borrowerName,
-          email,
-          loanAmount,
-          status,
-          underwriterId: "",
-          notes: "",
-          storedDocs: [],
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      }
-
-      toast({ type: "success", title: "Seed complete", message: "Demo underwriters + applications created." });
-    } catch (e: any) {
-      toast({ type: "error", title: "Seed failed", message: e?.message ?? "Unknown error" });
-    } finally {
-      setBusy(false);
-    }
-  }
+    return {
+      totalApps,
+      totalVol,
+      missingBorrower,
+      missingEmail,
+      canBackfill,
+      assigned,
+      unassigned,
+      activeUnderwriters,
+      assignmentCoverage: pct(assigned, totalApps),
+    };
+  }, [apps, underwriters]);
 
   async function backfillFromScan() {
     if (busy) return;
@@ -176,6 +151,7 @@ export default function AdminPage() {
 
       for (const d of snap.docs) {
         scanned += 1;
+
         const data = (d.data() as any) || {};
         const borrowerName = (data.borrowerName || "").toString().trim();
         const email = (data.email || "").toString().trim();
@@ -184,6 +160,7 @@ export default function AdminPage() {
         const scanEmail = (data.scan?.extracted?.email || "").toString().trim();
 
         const patch: any = {};
+
         if (!borrowerName && scanBorrower) patch.borrowerName = scanBorrower;
         if (!email && scanEmail) patch.email = scanEmail;
 
@@ -205,43 +182,129 @@ export default function AdminPage() {
         durationMs: 4200,
       });
     } catch (e: any) {
-      toast({ type: "error", title: "Backfill failed", message: e?.message ?? "Unknown error" });
+      toast({
+        type: "error",
+        title: "Backfill failed",
+        message: e?.message ?? "Unknown error",
+      });
     } finally {
       setBusy(false);
     }
   }
 
+  async function startIntroCheckout() {
+    if (checkoutBusy) return;
+    setCheckoutBusy(true);
+
+    try {
+      const res = await fetch("/api/stripe/checkout", {
+        method: "POST",
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok || !data?.url) {
+        throw new Error(data?.error || `Checkout failed (${res.status})`);
+      }
+
+      window.location.href = data.url;
+    } catch (e: any) {
+      toast({
+        type: "error",
+        title: "Checkout failed",
+        message: e?.message ?? "Unable to open Stripe Checkout.",
+        durationMs: 7000,
+      });
+    } finally {
+      setCheckoutBusy(false);
+    }
+  }
+
+  async function openStripePortal() {
+    if (billingBusy) return;
+    setBillingBusy(true);
+
+    try {
+      const res = await fetch("/api/stripe/portal", {
+        method: "POST",
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (res.ok && data?.url) {
+        window.location.href = data.url;
+        return;
+      }
+
+      window.open("https://dashboard.stripe.com/test/customers", "_blank", "noopener,noreferrer");
+
+      toast({
+        type: "info",
+        title: "Stripe dashboard opened",
+        message:
+          "Customer portal is not configured in this environment yet, so Velocity opened Stripe test dashboard instead.",
+        durationMs: 6000,
+      });
+    } catch {
+      window.open("https://dashboard.stripe.com/test/customers", "_blank", "noopener,noreferrer");
+
+      toast({
+        type: "info",
+        title: "Stripe dashboard opened",
+        message:
+          "Billing portal is not configured locally yet. Production clients will use the hosted customer portal.",
+        durationMs: 6000,
+      });
+    } finally {
+      setBillingBusy(false);
+    }
+  }
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-semibold">Admin</h1>
-          <div className="text-sm v-muted">Manage underwriters + system utilities.</div>
+    <div className="space-y-5">
+      <div className="rounded-2xl border bg-slate-950 text-white p-6 shadow-sm">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <div className="text-xs uppercase tracking-[0.18em] text-slate-300">Velocity Command Center</div>
+            <h1 className="text-3xl font-semibold mt-2">Admin Console</h1>
+            <div className="text-sm text-slate-300 mt-2 max-w-2xl">
+              Executive control layer for underwriting operations, team capacity, billing readiness, and system data health.
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <Chip label="Owner / Admin" kind="blue" />
+            <Chip label="Live Firestore Data" kind="ok" />
+            <Chip label="Demo-Safe Billing" kind="warn" />
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <button className="v-btn" onClick={seedDemoData} disabled={busy}>
-            {busy ? "Working…" : "Seed demo data"}
-          </button>
-          <button className="v-btn-primary" onClick={backfillFromScan} disabled={busy}>
-            {busy ? "Backfilling…" : "Backfill missing borrower/email"}
-          </button>
+        <div className="grid md:grid-cols-4 gap-3 mt-6">
+          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+            <div className="text-xs text-slate-300">Applications</div>
+            <div className="text-2xl font-semibold mt-1">{stats.totalApps}</div>
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+            <div className="text-xs text-slate-300">Pipeline Volume</div>
+            <div className="text-2xl font-semibold mt-1">{money(stats.totalVol)}</div>
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+            <div className="text-xs text-slate-300">Assignment Coverage</div>
+            <div className="text-2xl font-semibold mt-1">{stats.assignmentCoverage}</div>
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+            <div className="text-xs text-slate-300">Active Underwriters</div>
+            <div className="text-2xl font-semibold mt-1">{stats.activeUnderwriters}</div>
+          </div>
         </div>
       </div>
 
       <div className="grid md:grid-cols-4 gap-3">
         <div className="v-card p-4">
-          <div className="text-xs v-muted">Applications</div>
-          <div className="text-2xl font-semibold mt-1">{stats.totalApps}</div>
-        </div>
-
-        <div className="v-card p-4">
-          <div className="text-xs v-muted">Pipeline volume</div>
-          <div className="text-2xl font-semibold mt-1">{money(stats.totalVol)}</div>
-        </div>
-
-        <div className="v-card p-4">
-          <div className="text-xs v-muted">Missing borrower</div>
+          <div className="text-xs v-muted">Missing Borrower</div>
           <div className="text-2xl font-semibold mt-1">{stats.missingBorrower}</div>
           <div className="mt-2">
             <Chip label={`${stats.canBackfill} backfillable`} kind={stats.canBackfill > 0 ? "warn" : "muted"} />
@@ -249,17 +312,90 @@ export default function AdminPage() {
         </div>
 
         <div className="v-card p-4">
-          <div className="text-xs v-muted">Missing email</div>
+          <div className="text-xs v-muted">Missing Email</div>
           <div className="text-2xl font-semibold mt-1">{stats.missingEmail}</div>
           <div className="mt-2">
-            <Chip label="AI Scan snapshot" kind="ok" />
+            <Chip label="AI Scan Snapshot" kind="ok" />
+          </div>
+        </div>
+
+        <div className="v-card p-4">
+          <div className="text-xs v-muted">Assigned Files</div>
+          <div className="text-2xl font-semibold mt-1">{stats.assigned}</div>
+          <div className="mt-2">
+            <Chip label={`${stats.unassigned} unassigned`} kind={stats.unassigned > 0 ? "warn" : "ok"} />
+          </div>
+        </div>
+
+        <div className="v-card p-4">
+          <div className="text-xs v-muted">Data Repair</div>
+          <div className="text-sm font-semibold mt-1">Borrower / Email Backfill</div>
+          <button className="v-btn mt-3" onClick={backfillFromScan} disabled={busy}>
+            {busy ? "Backfilling..." : "Run Backfill"}
+          </button>
+        </div>
+      </div>
+
+      <div className="v-card p-5">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <div className="text-sm font-semibold">Revenue Control</div>
+            <div className="text-xs v-muted mt-1 max-w-2xl">
+              Stripe-backed subscription actions for selling Velocity. Use checkout for new prospects and billing portal for existing customers.
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button className="v-btn-primary" onClick={startIntroCheckout} disabled={checkoutBusy}>
+              {checkoutBusy ? "Opening Checkout..." : "Start Intro Checkout"}
+            </button>
+            <button className="v-btn" onClick={openStripePortal} disabled={billingBusy}>
+              {billingBusy ? "Opening Billing..." : "Manage Existing Billing"}
+            </button>
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-3 mt-4">
+          <div className="v-card p-4">
+            <div className="text-xs v-muted">New Customer Flow</div>
+            <div className="text-sm font-semibold mt-1">Stripe Checkout</div>
+            <div className="mt-2">
+              <Chip label="$1,500/mo Intro Partner" kind="ok" />
+            </div>
+            <div className="text-xs v-muted mt-2">
+              Sends prospects to a clean payment page using STRIPE_INTRO_PRICE_ID.
+            </div>
+          </div>
+
+          <div className="v-card p-4">
+            <div className="text-xs v-muted">Existing Customer Flow</div>
+            <div className="text-sm font-semibold mt-1">Billing Portal</div>
+            <div className="mt-2">
+              <Chip label="Manage Subscription" kind="blue" />
+            </div>
+            <div className="text-xs v-muted mt-2">
+              Used after a customer already exists in Stripe.
+            </div>
+          </div>
+
+          <div className="v-card p-4">
+            <div className="text-xs v-muted">Client Visibility</div>
+            <div className="mt-2">
+              <Chip label="Admin Only" kind="ok" />
+            </div>
+            <div className="text-xs v-muted mt-2">
+              Revenue controls stay separate from the loan workflow screens.
+            </div>
           </div>
         </div>
       </div>
 
       <div className="v-card overflow-hidden">
         <div className="p-4 border-b bg-white flex items-center justify-between" style={{ borderColor: "var(--v-border)" }}>
-          <div className="text-sm font-medium">Underwriters</div>
+          <div>
+            <div className="text-sm font-semibold">Underwriter Directory</div>
+            <div className="text-xs v-muted mt-1">Live team roster used for queue assignment and workload balancing.</div>
+          </div>
           <div className="text-xs v-muted">{underwriters.length} total</div>
         </div>
 
@@ -272,6 +408,7 @@ export default function AdminPage() {
                 <th className="text-left p-3">Status</th>
               </tr>
             </thead>
+
             <tbody>
               {underwriters.map((u) => (
                 <tr key={u.id} className="border-b last:border-b-0" style={{ borderColor: "var(--v-border)" }}>
@@ -286,7 +423,7 @@ export default function AdminPage() {
               {underwriters.length === 0 && (
                 <tr>
                   <td className="p-8 text-sm v-muted" colSpan={3}>
-                    No underwriters yet. Use “Seed demo data” to create demo accounts.
+                    No underwriters found. Add underwriters from Firestore or onboarding workflow.
                   </td>
                 </tr>
               )}
@@ -296,9 +433,10 @@ export default function AdminPage() {
       </div>
 
       <div className="v-card p-4">
-        <div className="text-sm font-medium">What this does</div>
+        <div className="text-sm font-semibold">System Notes</div>
         <div className="text-xs v-muted mt-1">
-          The backfill tool permanently writes borrowerName/email onto application docs when AI Scan extracted fields exist — so your database stays clean and the UI stays consistent.
+          Admin actions are intentionally separated from the borrower workflow. This keeps demos clean while preserving
+          owner-level operational controls.
         </div>
       </div>
     </div>
