@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { exchangeSession, sessionErrorMessage } from "@/lib/client/auth/velocitySession";
+import { safeNextDestination } from "@/lib/auth/navigation";
 
 function initials(email: string) {
   const s = (email || "").trim();
@@ -19,6 +20,7 @@ function initials(email: string) {
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
@@ -40,7 +42,7 @@ export default function LoginPage() {
     try {
       const credential = await signInWithEmailAndPassword(auth, email.trim(), pw);
       await exchangeSession(credential.user);
-      router.push("/dashboard");
+      router.push(safeNextDestination(searchParams.get("next")));
     } catch (error) {
       await signOut(auth).catch(() => undefined);
       setMsg(sessionErrorMessage(error));

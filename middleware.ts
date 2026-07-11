@@ -1,35 +1,25 @@
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { hasSafeSessionCookieShape, isProtectedNavigationPath, safeNextDestination } from "@/lib/auth/navigation";
 
 export function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl
-
-  // Public routes (no auth needed)
-  if (
-    pathname.startsWith('/login') ||
-    pathname.startsWith('/register') ||
-    pathname.startsWith('/api')
-  ) {
-    return NextResponse.next()
+  const { pathname, search } = req.nextUrl;
+  if (!isProtectedNavigationPath(pathname)) return NextResponse.next();
+  const cookieName = process.env.NODE_ENV === "production" ? "__Host-velocity_session" : "velocity_session";
+  if (!hasSafeSessionCookieShape(req.cookies.get(cookieName)?.value)) {
+    const login = req.nextUrl.clone();
+    login.pathname = "/auth/login";
+    login.search = `?next=${encodeURIComponent(safeNextDestination(`${pathname}${search}`))}`;
+    return NextResponse.redirect(login);
   }
-
-  // TEMP AUTH CHECK (we'll wire Firebase auth next)
-  const isLoggedIn = true // placeholder
-
-  if (!isLoggedIn) {
-    return NextResponse.redirect(new URL('/login', req.url))
-  }
-
-  return NextResponse.next()
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-velocity-pathname", pathname);
+  requestHeaders.set("x-velocity-search", search);
+  return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
 export const config = {
   matcher: [
-    '/dashboard/:path*',
-    '/applications/:path*',
-    '/borrowers/:path*',
-    '/underwriters/:path*',
-    '/settings/:path*',
-    '/admin/:path*',
+    "/dashboard/:path*", "/applications/:path*", "/borrowers/:path*", "/queue/:path*", "/underwriters/:path*", "/settings/:path*", "/admin/:path*", "/upload/:path*", "/firebase-test/:path*", "/debug/:path*",
   ],
-}
+};

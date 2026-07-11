@@ -29,7 +29,7 @@ async function main() {
   assert(!/localStorage|sessionStorage|console\./.test(helper), "client helper persists or logs credentials");
   assert(!/uid|tenant|role|cookie/i.test(helper), "client helper accepts identity or inspects cookies");
   const login = fs.readFileSync("app/auth/login/page.tsx", "utf8"), registration = fs.readFileSync("app/auth/register/page.tsx", "utf8"), topbar = fs.readFileSync("components/layout/Topbar.tsx", "utf8");
-  assert((login.match(/exchangeSession\(/g) || []).length === 1 && login.indexOf("exchangeSession(") < login.indexOf('router.push("/dashboard")'), "login navigation does not wait for one exchange");
+  assert((login.match(/exchangeSession\(/g) || []).length === 1 && login.indexOf("exchangeSession(") < login.indexOf("router.push(safeNextDestination"), "login navigation does not wait for one exchange");
   assert((registration.match(/exchangeSession\(/g) || []).length === 1 && registration.indexOf("setDoc(") < registration.indexOf("exchangeSession(") && registration.indexOf("exchangeSession(") < registration.indexOf('router.push("/dashboard")'), "registration behavior or exchange ordering changed");
   assert(topbar.includes("clearSession") && topbar.includes('router.replace("/auth/login")'), "logout redirect integration missing");
   console.log("Client browser session regression: PASS");

@@ -4,6 +4,7 @@ import { ReactNode, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/lib/firebase";
+import { safeNextDestination } from "@/lib/auth/navigation";
 
 function isPublicPath(pathname: string) {
   if (pathname === "/") return true;
@@ -31,17 +32,9 @@ export default function AuthGuard({ children }: { children: ReactNode }) {
       setChecked(true);
 
       if (!ok && requiresAuth) {
-        const next = encodeURIComponent(pathname || "/");
+        const next = encodeURIComponent(safeNextDestination(pathname || "/"));
         router.replace(`/auth/login?next=${next}`);
         return;
-      }
-
-      if (ok && pathname.startsWith("/auth")) {
-        const params = new URLSearchParams(
-          typeof window !== "undefined" ? window.location.search : ""
-        );
-        const next = params.get("next");
-        router.replace(next || "/dashboard");
       }
     });
 
