@@ -3,7 +3,7 @@ import { cert, getApp, getApps, initializeApp, type App } from "firebase-admin/a
 import { getAuth } from "firebase-admin/auth";
 import type { FirebaseAuthVerificationAdapter, VerifiedFirebaseClaims } from "./firebaseAuthVerifierCore";
 
-function defaultAdminApp(): App {
+export function defaultAdminApp(): App {
   if (getApps().length) return getApp();
   const projectId = process.env.FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;

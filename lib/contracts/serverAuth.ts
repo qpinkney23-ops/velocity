@@ -61,13 +61,14 @@ export const SERVER_AUTH_ERROR_CODES = [
   "AUTH_REQUIRED", "AUTH_INVALID", "AUTH_REVOKED", "ACCOUNT_DISABLED",
   "TENANT_CONTEXT_REQUIRED", "MEMBERSHIP_INACTIVE", "FORBIDDEN",
   "CSRF_INVALID", "RATE_LIMITED", "INTERNAL_ERROR",
+  "REAUTH_REQUIRED", "ORIGIN_INVALID", "HOST_INVALID", "METHOD_NOT_ALLOWED", "PAYLOAD_INVALID",
 ] as const;
 export type ServerAuthErrorCode = typeof SERVER_AUTH_ERROR_CODES[number];
 
 export type StableServerAuthErrorV1 = Readonly<{
   schemaVersion: typeof SERVER_AUTH_ERROR_SCHEMA_VERSION;
   code: ServerAuthErrorCode;
-  status: 401 | 403 | 429 | 500;
+  status: 400 | 401 | 403 | 405 | 429 | 500;
   message: string;
   requestId: RequestId;
 }>;
@@ -144,7 +145,7 @@ export function parseServerAuthContext(input: unknown): ServerAuthValidationResu
   return Object.freeze({ ok: true, value: Object.freeze({ schemaVersion: SERVER_AUTH_CONTEXT_SCHEMA_VERSION, principal: principal.value, verifiedAt: verifiedAt.value, ...(revocationCheckedAt?.value ? { revocationCheckedAt: revocationCheckedAt.value } : {}), requestId: requestId.value, correlationId: correlationId.value }) });
 }
 
-const ERROR_DEFINITIONS: Readonly<Record<ServerAuthErrorCode, Readonly<{ status: 401 | 403 | 429 | 500; message: string }>>> = Object.freeze({
+const ERROR_DEFINITIONS: Readonly<Record<ServerAuthErrorCode, Readonly<{ status: 400 | 401 | 403 | 405 | 429 | 500; message: string }>>> = Object.freeze({
   AUTH_REQUIRED: Object.freeze({ status: 401, message: "Authentication is required." }),
   AUTH_INVALID: Object.freeze({ status: 401, message: "Authentication is invalid." }),
   AUTH_REVOKED: Object.freeze({ status: 401, message: "Authentication is no longer valid." }),
@@ -155,6 +156,11 @@ const ERROR_DEFINITIONS: Readonly<Record<ServerAuthErrorCode, Readonly<{ status:
   CSRF_INVALID: Object.freeze({ status: 403, message: "Request validation failed." }),
   RATE_LIMITED: Object.freeze({ status: 429, message: "Too many requests." }),
   INTERNAL_ERROR: Object.freeze({ status: 500, message: "The request could not be completed." }),
+  REAUTH_REQUIRED: Object.freeze({ status: 401, message: "Recent authentication is required." }),
+  ORIGIN_INVALID: Object.freeze({ status: 403, message: "Request origin is not allowed." }),
+  HOST_INVALID: Object.freeze({ status: 403, message: "Request host is not allowed." }),
+  METHOD_NOT_ALLOWED: Object.freeze({ status: 405, message: "Request method is not allowed." }),
+  PAYLOAD_INVALID: Object.freeze({ status: 400, message: "Request payload is invalid." }),
 });
 
 export function createStableServerAuthError(code: unknown, requestId: unknown): ServerAuthValidationResult<StableServerAuthErrorV1> {

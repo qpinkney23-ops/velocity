@@ -37,7 +37,8 @@ test("no production file imports server-auth contracts or boundary", () => {
   const roots = ["app", "components", "middleware.ts", "lib/firebase.ts", "lib/firebase-admin.ts"];
   const files: string[] = [];
   for (const root of roots) { if (!fs.existsSync(root)) continue; const stat = fs.statSync(root); if (stat.isFile()) files.push(root); else for (const entry of fs.readdirSync(root, { recursive: true })) { const target = path.join(root, String(entry)); if (fs.statSync(target).isFile() && /\.(ts|tsx|js|jsx)$/.test(target)) files.push(target); } }
-  assert(files.every((file) => !/serverAuth|server-auth-contract|serverAuthBoundary/.test(fs.readFileSync(file, "utf8"))), "production file imports Slice 01 server auth");
+  const approved = new Set([path.normalize("app/api/auth/session/route.ts"), path.normalize("app/api/auth/logout/route.ts")]);
+  assert(files.every((file) => approved.has(path.normalize(file)) || !/serverAuth|server-auth-contract|serverAuthBoundary/.test(fs.readFileSync(file, "utf8"))), "unapproved production file imports Slice 01 server auth");
 });
 
 let passed = 0; const failures: string[] = [];

@@ -135,7 +135,7 @@ function fixtures() {
 function noProductionImports() {
   const roots = ["app", "components", "lib"];
   const violations: string[] = [];
-  const allowedProductionImports = ["app/applications/page.tsx"] as const;
+  const allowedProductionImports = ["app/api/auth/session/route.ts", "app/applications/page.tsx"] as const;
   const importSetIsAllowed = (imports: readonly string[]) =>
     imports.length === allowedProductionImports.length &&
     imports.every((item, index) => item === allowedProductionImports[index]);
@@ -156,9 +156,9 @@ function noProductionImports() {
   roots.forEach(visit);
   const normalized = violations.map((item) => item.replace(/\\/g, "/")).sort();
   assert(importSetIsAllowed(normalized), `unexpected production contract imports found: ${normalized.join(", ")}`);
-  assert(importSetIsAllowed(["app/applications/page.tsx"]), "applications page is explicitly allowed");
+  assert(importSetIsAllowed(["app/api/auth/session/route.ts", "app/applications/page.tsx"]), "approved session and applications imports are explicitly allowed");
   assert(
-    !importSetIsAllowed(["app/applications/page.tsx", "app/dashboard/page.tsx"]),
+    !importSetIsAllowed(["app/api/auth/session/route.ts", "app/applications/page.tsx", "app/dashboard/page.tsx"]),
     "a second production import must fail the allowlist"
   );
   assert(
