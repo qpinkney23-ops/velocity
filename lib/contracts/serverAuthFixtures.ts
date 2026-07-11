@@ -14,4 +14,7 @@ export const serverAuthFixtures = freeze({
   malformedTimestamp: freeze({ ...base, verifiedAt: "not-a-time", principal: freeze({ kind: "service", principalId: "service_test", authenticationMethod: "service_credential" }) }),
   malformedRequestId: freeze({ ...base, requestId: "request/id", principal: freeze({ kind: "service", principalId: "service_test", authenticationMethod: "service_credential" }) }),
   credentials: freeze({ none: freeze({}), cookie: freeze({ sessionCookie: "synthetic-cookie-secret" }), bearer: freeze({ authorizationHeader: "Bearer synthetic-token-secret" }), conflict: freeze({ sessionCookie: "synthetic-cookie-secret", authorizationHeader: "Bearer synthetic-token-secret" }), unsupported: freeze({ authorizationHeader: "Basic synthetic-secret" }) }),
+  verifierClaims: freeze({ uid: "user_verified_001", issuedAtSeconds: 1783791300, authenticatedAtSeconds: 1783791000, emailVerified: true }),
+  trustedCorrelationId: "corr_trusted_internal_001",
+  untrustedCorrelationId: "corr_untrusted_external_001",
 });
