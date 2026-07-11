@@ -10,9 +10,11 @@ service firebase.storage {
       return /databases/(default)/documents/applications/$(applicationId);
     }
     function activeClientMember(tenantId) {
-      let m = firestore.get(memberPath(tenantId, request.auth.uid)).data;
-      return request.auth != null && m.membershipStatus == "active" && m.tenantId == tenantId &&
-        m.userId == request.auth.uid && m.role in ["owner", "processor", "underwriter", "viewer"];
+      return request.auth != null &&
+        firestore.get(memberPath(tenantId, request.auth.uid)).data.membershipStatus == "active" &&
+        firestore.get(memberPath(tenantId, request.auth.uid)).data.tenantId == tenantId &&
+        firestore.get(memberPath(tenantId, request.auth.uid)).data.userId == request.auth.uid &&
+        firestore.get(memberPath(tenantId, request.auth.uid)).data.role in ["owner", "processor", "underwriter", "viewer"];
     }
     function matchingOwnership(tenantId, applicationId) {
       let app = firestore.get(appPath(applicationId)).data;
@@ -29,4 +31,3 @@ service firebase.storage {
     match /{allPaths=**} { allow read, write: if false; }
   }
 }
-

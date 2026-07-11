@@ -8,10 +8,11 @@ service cloud.firestore {
       return /databases/$(database)/documents/tenants/$(tenantId)/members/$(uid);
     }
     function activeClientMember(tenantId) {
-      let m = get(memberPath(tenantId, request.auth.uid)).data;
-      return request.auth != null && m.membershipStatus == "active" &&
-        m.tenantId == tenantId && m.userId == request.auth.uid &&
-        m.role in ["owner", "processor", "underwriter", "viewer"];
+      return request.auth != null &&
+        get(memberPath(tenantId, request.auth.uid)).data.membershipStatus == "active" &&
+        get(memberPath(tenantId, request.auth.uid)).data.tenantId == tenantId &&
+        get(memberPath(tenantId, request.auth.uid)).data.userId == request.auth.uid &&
+        get(memberPath(tenantId, request.auth.uid)).data.role in ["owner", "processor", "underwriter", "viewer"];
     }
     function canCreateApplication(tenantId) {
       return activeClientMember(tenantId) &&
@@ -44,4 +45,3 @@ service cloud.firestore {
     match /{document=**} { allow read, write: if false; }
   }
 }
-

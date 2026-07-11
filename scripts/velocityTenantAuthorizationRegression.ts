@@ -59,7 +59,8 @@ test("27 harness remains isolated and test-only", () => {
   const testFirestore = fs.readFileSync("tests/tenant-authorization/firestore.test.rules", "utf8"); const testStorage = fs.readFileSync("tests/tenant-authorization/storage.test.rules", "utf8");
   assert(testFirestore.includes("TEST ONLY") && testStorage.includes("TEST ONLY"), "test rules not labeled");
   assert(!productionFirestore.includes("tenant_alpha") && !productionStorage.includes("tenant_alpha"), "synthetic rules leaked into production rules");
-  assert(fs.readFileSync("firebase.tenant-auth.test.json", "utf8").includes("Never use this file for deployment"), "test config not isolated");
+  const config = fs.readFileSync("firebase.tenant-auth.test.json", "utf8");
+  assert(config.includes("tests/tenant-authorization/firestore.test.rules") && config.includes("tests/tenant-authorization/storage.test.rules"), "test config is not isolated to test rules");
 });
 test("28 fixtures are deterministic, immutable, and PII-free", () => {
   assert(Object.isFrozen(f) && Object.isFrozen(f.memberships) && Object.isFrozen(f.applications), "fixtures not frozen");
@@ -69,6 +70,5 @@ test("28 fixtures are deterministic, immutable, and PII-free", () => {
 let passed = 0; const failures: string[] = [];
 for (const [name, run] of cases) { try { run(); passed++; console.log(`PASS: ${name}`); } catch (error: any) { const message = error?.message || String(error); failures.push(`${name}: ${message}`); console.error(`FAIL: ${name}\n  ${message}`); } }
 console.log(`\nTenant authorization regression result: ${passed}/${cases.length} passed`);
-console.log("Harness: deterministic safest-available equivalent; test-only rules are ready for Firebase Emulator parity once Java/firebase-tools are available.");
+console.log("Result source: deterministic fallback (Firebase Emulator unavailable).");
 if (failures.length) { failures.forEach((failure) => console.log(`- ${failure}`)); process.exitCode = 1; }
-
