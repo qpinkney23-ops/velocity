@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { onAuthStateChanged, signInWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
+import { exchangeSession, sessionErrorMessage } from "@/lib/client/auth/velocitySession";
 
 function initials(email: string) {
   const s = (email || "").trim();
@@ -25,13 +26,6 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
 
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      if (u) router.push("/dashboard");
-    });
-    return () => unsub();
-  }, [router]);
-
   const canSubmit = useMemo(() => {
     if (!email.trim() || !email.includes("@")) return false;
     if (!pw || pw.length < 6) return false;
@@ -44,10 +38,12 @@ export default function LoginPage() {
     setMsg("");
 
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), pw);
+      const credential = await signInWithEmailAndPassword(auth, email.trim(), pw);
+      await exchangeSession(credential.user);
       router.push("/dashboard");
-    } catch (e: any) {
-      setMsg(`❌ Login failed: ${e?.message ?? "Unknown error"}`);
+    } catch (error) {
+      await signOut(auth).catch(() => undefined);
+      setMsg(sessionErrorMessage(error));
       setLoading(false);
     }
   }

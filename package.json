@@ -24,6 +24,7 @@
     "velocity:server-auth:emulator": "firebase emulators:exec --config firebase.tenant-auth.test.json --project demo-velocity-server-auth --only auth \"npx tsx scripts/velocityFirebaseAuthEmulatorRegression.ts\"",
     "velocity:server-auth": "npm run velocity:server-auth:contract && npm run velocity:server-auth:verifier && npx tsx scripts/velocityFirebaseAuthVerifierRunner.ts",
     "velocity:server-auth:session": "npx tsx scripts/velocityBrowserSessionRegression.ts",
+    "velocity:server-auth:client-session": "npx tsx scripts/velocityClientSessionRegression.ts",
     "velocity:regressions": "npx tsx scripts/velocityRegressionSuite.ts",
     "velocity:check": "npm run build && npm run velocity:regressions"
   },

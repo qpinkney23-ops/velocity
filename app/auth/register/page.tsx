@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createUserWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
+import { createUserWithEmailAndPassword, signOut } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
 import { doc, serverTimestamp, setDoc } from "firebase/firestore";
+import { exchangeSession, sessionErrorMessage } from "@/lib/client/auth/velocitySession";
 
 function initials(email: string) {
   const s = (email || "").trim();
@@ -27,13 +28,6 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
 
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      if (u) router.push("/dashboard");
-    });
-    return () => unsub();
-  }, [router]);
-
   const canSubmit = useMemo(() => {
     if (!email.trim() || !email.includes("@")) return false;
     if (!pw || pw.length < 6) return false;
@@ -45,6 +39,7 @@ export default function RegisterPage() {
     setLoading(true);
     setMsg("");
 
+    let profileCreated = false;
     try {
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), pw);
 
@@ -60,10 +55,13 @@ export default function RegisterPage() {
         },
         { merge: true }
       );
+      profileCreated = true;
 
+      await exchangeSession(cred.user);
       router.push("/dashboard");
-    } catch (e: any) {
-      setMsg(`❌ Register failed: ${e?.message ?? "Unknown error"}`);
+    } catch (error) {
+      await signOut(auth).catch(() => undefined);
+      setMsg(profileCreated ? `Your account was created, but a secure session could not be started. Please sign in again. ${sessionErrorMessage(error)}` : "Unable to create your account. Please check your details and try again.");
       setLoading(false);
     }
   }

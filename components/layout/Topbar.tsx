@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useToast } from "@/components/ui/ToastProvider";
+import { clearSession } from "@/lib/client/auth/velocitySession";
 
 function safeGet(key: string, fallback: string) {
   try {
@@ -86,18 +87,20 @@ export default function Topbar() {
   const pageTitle = useMemo(() => titleFromPath(pathname), [pathname]);
 
   async function doSignOut() {
+    setOpen(false);
     try {
       if (!auth) return;
-      await signOut(auth);
+      await clearSession(() => signOut(auth));
       toast({ type: "success", title: "Signed out" });
-      router.push("/auth/login");
-    } catch (e: any) {
+    } catch {
       toast({
-        type: "error",
-        title: "Sign out failed",
-        message: e?.message ?? "Unknown error",
+        type: "info",
+        title: "Signed out",
+        message: "Sign-out completed with limited confirmation.",
         durationMs: 3200,
       });
+    } finally {
+      router.replace("/auth/login");
     }
   }
 

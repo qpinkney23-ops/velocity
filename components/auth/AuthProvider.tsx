@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, User, signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
+import { clearSession } from "@/lib/client/auth/velocitySession";
 
 type AuthCtx = {
   user: User | null;
@@ -29,7 +30,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       loading,
       logout: async () => {
-        await signOut(auth);
+        try {
+          await clearSession(() => signOut(auth));
+        } finally {
+          if (window.location.pathname !== "/auth/login") window.location.replace("/auth/login");
+        }
       },
     }),
     [user, loading]
