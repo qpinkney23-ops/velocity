@@ -31,6 +31,7 @@
     "velocity:authorization:resolver:contract": "npx tsx scripts/velocityTenantAuthorizationResolverRegression.ts",
     "velocity:authorization:resolver:emulator": "firebase emulators:exec --config firebase.tenant-auth.test.json --project demo-velocity-authorization-resolver --only firestore \"npx tsx scripts/velocityTenantAuthorizationResolverEmulatorRegression.ts\"",
     "velocity:authorization:resolver": "npm run velocity:authorization:resolver:contract && npx tsx scripts/velocityTenantAuthorizationResolverRunner.ts",
+    "velocity:authorization:decision": "npx tsx scripts/velocityAuthorizationDecisionRegression.ts",
     "velocity:regressions": "npx tsx scripts/velocityRegressionSuite.ts",
     "velocity:check": "npm run build && npm run velocity:regressions"
   },

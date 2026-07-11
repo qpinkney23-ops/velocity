@@ -4,6 +4,8 @@ import { MEMBERSHIP_STATUSES, TENANT_ROLES, TENANT_STATUSES, validateBranchId, v
 
 export const AUTHORIZATION_CONTEXT_V1 = "authorization-context.v1" as SchemaVersion;
 export const AUTHORIZATION_DECISION_V1 = "authorization-decision.v1" as SchemaVersion;
+export const AUTHORIZATION_REQUEST_V1 = "authorization-request.v1" as SchemaVersion;
+export const RESOLVED_RESOURCE_FACTS_V1 = "resolved-resource-facts.v1" as SchemaVersion;
 export const AUTHORIZATION_POLICY_VERSION = "authorization-policy.provisional.v1";
 export const AUTHORIZATION_PERMISSION_VERSION = "authorization-permissions.provisional.v1";
 
@@ -49,6 +51,17 @@ export type AuthorizationDecisionV1 = Readonly<{
   constraintsEvaluated: readonly ConstraintEvaluation[];
   audit: Readonly<{ action: string; outcome: "allowed" | "denied"; piiPresent: false }>;
 }>;
+export type AuthorizationRequestV1 = Readonly<{
+  schemaVersion: typeof AUTHORIZATION_REQUEST_V1; permission: AuthorizationPermission; resourceType: AuthorizationResourceType;
+  resourceId: string; action: Readonly<{ auditAction: string; requiredConstraints: readonly AuthorizationConstraint[] }>;
+  requestId: RequestId; correlationId: CorrelationId; policyVersion: string;
+}>;
+export type ResolvedResourceFactsV1 = Readonly<{
+  schemaVersion: typeof RESOLVED_RESOURCE_FACTS_V1; resourceType: AuthorizationResourceType; resourceId: string;
+  tenantId?: TenantId; branchId?: BranchId; teamIds: readonly TeamId[]; assignedUserIds: readonly UserId[]; assignedTeamIds: readonly TeamId[];
+  creatorId?: UserId; legacyState: "tenant_owned" | "unresolved_legacy" | "migration_pending" | "migration_rejected" | "not_applicable";
+  resourceStatus: string;
+}>;
 
 export type AuthorizationContractResult<T> = Readonly<{ ok: true; value: T }> | Readonly<{ ok: false; code: "invalid_authorization_contract" }>;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -71,4 +84,19 @@ export function parseAuthorizationDecision(input: unknown): AuthorizationContrac
   if (raw.schemaVersion !== AUTHORIZATION_DECISION_V1 || !["allow", "deny"].includes(raw.decision) || !AUTHORIZATION_PERMISSIONS.includes(raw.permission) || !["firebase_user", "service", "cron", "external_webhook"].includes(raw.principalKind) || (tenantId && !tenantId.ok) || !AUTHORIZATION_RESOURCE_TYPES.includes(raw.resourceType) || (raw.resourceId !== undefined && !SAFE_ID.test(raw.resourceId)) || !["authorized", ...AUTHORIZATION_DENIAL_REASONS].includes(raw.reasonCode) || raw.policyVersion !== AUTHORIZATION_POLICY_VERSION || !evaluatedAt || !requestId.ok || !correlationId.ok || !Array.isArray(constraints) || constraints.some((item: any) => !item || !AUTHORIZATION_CONSTRAINTS.includes(item.constraint) || !["pass", "fail", "not_applicable"].includes(item.result)) || !raw.audit || !SAFE_ID.test(raw.audit.action || "") || raw.audit.piiPresent !== false || raw.audit.outcome !== (raw.decision === "allow" ? "allowed" : "denied")) return fail();
   const frozenConstraints = Object.freeze(constraints.map((item: ConstraintEvaluation) => Object.freeze({ ...item })));
   return Object.freeze({ ok: true, value: Object.freeze({ schemaVersion: AUTHORIZATION_DECISION_V1, decision: raw.decision, permission: raw.permission, principalKind: raw.principalKind, ...(tenantId?.ok ? { tenantId: tenantId.value } : {}), resourceType: raw.resourceType, ...(raw.resourceId ? { resourceId: raw.resourceId } : {}), reasonCode: raw.reasonCode, policyVersion: raw.policyVersion, evaluatedAt, requestId: requestId.value, correlationId: correlationId.value, constraintsEvaluated: frozenConstraints, audit: Object.freeze({ action: raw.audit.action, outcome: raw.audit.outcome, piiPresent: false }) }) });
+}
+
+export function parseAuthorizationRequest(input: unknown): AuthorizationContractResult<AuthorizationRequestV1> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return fail(); const raw = input as Record<string, any>;
+  const requestId = validateRequestId(raw.requestId), correlationId = validateCorrelationId(raw.correlationId); const constraints = raw.action?.requiredConstraints;
+  if (raw.schemaVersion !== AUTHORIZATION_REQUEST_V1 || !AUTHORIZATION_PERMISSIONS.includes(raw.permission) || !AUTHORIZATION_RESOURCE_TYPES.includes(raw.resourceType) || !SAFE_ID.test(raw.resourceId || "") || !raw.action || !SAFE_ID.test(raw.action.auditAction || "") || !Array.isArray(constraints) || new Set(constraints).size !== constraints.length || constraints.some((item: unknown) => !AUTHORIZATION_CONSTRAINTS.includes(item as AuthorizationConstraint)) || !requestId.ok || !correlationId.ok || typeof raw.policyVersion !== "string" || !raw.policyVersion) return fail();
+  return Object.freeze({ ok: true, value: Object.freeze({ schemaVersion: AUTHORIZATION_REQUEST_V1, permission: raw.permission, resourceType: raw.resourceType, resourceId: raw.resourceId, action: Object.freeze({ auditAction: raw.action.auditAction, requiredConstraints: Object.freeze([...constraints]) }), requestId: requestId.value, correlationId: correlationId.value, policyVersion: raw.policyVersion }) });
+}
+
+export function parseResolvedResourceFacts(input: unknown): AuthorizationContractResult<ResolvedResourceFactsV1> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return fail(); const raw = input as Record<string, any>;
+  const tenantId = raw.tenantId === undefined ? undefined : validateTenantId(raw.tenantId), branchId = raw.branchId === undefined ? undefined : validateBranchId(raw.branchId);
+  const teamIds = uniqueIds(raw.teamIds, validateTeamId), assignedUserIds = uniqueIds(raw.assignedUserIds, validateUserId), assignedTeamIds = uniqueIds(raw.assignedTeamIds, validateTeamId); const creatorId = raw.creatorId === undefined ? undefined : validateUserId(raw.creatorId);
+  if (raw.schemaVersion !== RESOLVED_RESOURCE_FACTS_V1 || !AUTHORIZATION_RESOURCE_TYPES.includes(raw.resourceType) || !SAFE_ID.test(raw.resourceId || "") || (tenantId && !tenantId.ok) || (branchId && !branchId.ok) || !teamIds || !assignedUserIds || !assignedTeamIds || (creatorId && !creatorId.ok) || !["tenant_owned", "unresolved_legacy", "migration_pending", "migration_rejected", "not_applicable"].includes(raw.legacyState) || !SAFE_ID.test(raw.resourceStatus || "")) return fail();
+  return Object.freeze({ ok: true, value: Object.freeze({ schemaVersion: RESOLVED_RESOURCE_FACTS_V1, resourceType: raw.resourceType, resourceId: raw.resourceId, ...(tenantId?.ok ? { tenantId: tenantId.value } : {}), ...(branchId?.ok ? { branchId: branchId.value } : {}), teamIds, assignedUserIds, assignedTeamIds, ...(creatorId?.ok ? { creatorId: creatorId.value } : {}), legacyState: raw.legacyState, resourceStatus: raw.resourceStatus }) });
 }
