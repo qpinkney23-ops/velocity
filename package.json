@@ -16,6 +16,9 @@
     "velocity:tenant-auth": "npx tsx scripts/velocityTenantAuthorizationRunner.ts",
     "velocity:tenant-auth:emulator": "firebase emulators:exec --config firebase.tenant-auth.test.json --project demo-velocity-tenant-auth --only firestore,storage \"npx tsx scripts/velocityTenantAuthorizationEmulatorRegression.ts\"",
     "velocity:tenant-auth:fallback": "npx tsx scripts/velocityTenantAuthorizationRegression.ts",
+    "velocity:tenant-bootstrap": "npm run velocity:tenant-bootstrap:contract && npx tsx scripts/velocityTenantBootstrapRunner.ts",
+    "velocity:tenant-bootstrap:contract": "npx tsx scripts/velocityTenantBootstrapContractRegression.ts",
+    "velocity:tenant-bootstrap:emulator": "firebase emulators:exec --config firebase.tenant-auth.test.json --project demo-velocity-tenant-bootstrap --only firestore \"npx tsx scripts/velocityTenantBootstrapEmulatorRegression.ts\"",
     "velocity:regressions": "npx tsx scripts/velocityRegressionSuite.ts",
     "velocity:check": "npm run build && npm run velocity:regressions"
   },

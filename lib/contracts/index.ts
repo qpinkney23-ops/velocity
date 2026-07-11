@@ -6,3 +6,5 @@ export * from "./applicationCreate";
 export * from "./applicationCreateFixtures";
 export * from "./tenantSystem";
 export * from "./tenantSystemFixtures";
+export * from "./tenantBootstrap";
+export * from "./tenantBootstrapFixtures";
