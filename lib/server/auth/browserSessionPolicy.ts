@@ -1,5 +1,5 @@
 import { randomBytes } from "crypto";
-import { createStableServerAuthError, validateCorrelationId, validateRequestId, type ServerAuthErrorCode, type StableServerAuthErrorV1 } from "../../contracts/serverAuth";
+import { createStableServerAuthError, validateCorrelationId, validateRequestId, type CorrelationId, type RequestId, type ServerAuthErrorCode, type StableServerAuthErrorV1 } from "../../contracts/serverAuth";
 
 export const VELOCITY_SESSION_MAX_AGE_SECONDS = 12 * 60 * 60;
 export const VELOCITY_SESSION_MAX_AGE_MILLISECONDS = VELOCITY_SESSION_MAX_AGE_SECONDS * 1000;
@@ -21,7 +21,7 @@ export function boundaryIds(inboundCorrelationId: unknown, trusted: boolean) {
   const requestId = generateSessionBoundaryId("req");
   const correlationId = trusted && validateCorrelationId(inboundCorrelationId).ok ? inboundCorrelationId as string : generateSessionBoundaryId("corr");
   if (!validateRequestId(requestId).ok || !validateCorrelationId(correlationId).ok) throw new Error("session_boundary_id_failure");
-  return Object.freeze({ requestId, correlationId });
+  return Object.freeze({ requestId: requestId as RequestId, correlationId: correlationId as CorrelationId });
 }
 
 export function boundaryError(code: ServerAuthErrorCode, requestId: string): StableServerAuthErrorV1 {

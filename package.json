@@ -26,6 +26,7 @@
     "velocity:server-auth:session": "npx tsx scripts/velocityBrowserSessionRegression.ts",
     "velocity:server-auth:client-session": "npx tsx scripts/velocityClientSessionRegression.ts",
     "velocity:server-auth:navigation": "npx tsx scripts/velocityProtectedNavigationRegression.ts",
+    "velocity:server-auth:user-api": "npx tsx scripts/velocityUserApiAuthRegression.ts",
     "velocity:regressions": "npx tsx scripts/velocityRegressionSuite.ts",
     "velocity:check": "npm run build && npm run velocity:regressions"
   },
