@@ -84,7 +84,7 @@ export type TenantMembershipV1 = Readonly<{
 
 export type AuthenticationSource = "firebase_auth" | "service_account";
 export type AuthorizationSource = "tenant_membership";
-export type AuthorizationContextV1 = Readonly<{
+export type ResolvedTenantMembershipContextV1 = Readonly<{
   schemaVersion: typeof AUTHORIZATION_CONTEXT_SCHEMA_VERSION;
   authenticatedUserId: UserId;
   tenantId: TenantId;
@@ -261,7 +261,7 @@ export function parseTenantMembership(input: unknown): TenantContractResult<Tena
 export function createAuthorizationContext(input: Readonly<{
   authenticatedUserId: unknown; tenant?: TenantV1; membership?: TenantMembershipV1;
   authenticationSource: unknown; authorizationSource: unknown; evaluatedAt: unknown;
-}>): TenantContractResult<AuthorizationContextV1> {
+}>): TenantContractResult<ResolvedTenantMembershipContextV1> {
   const userId = validateUserId(input.authenticatedUserId);
   if (!userId.ok) return fail("inactive_authorization", "Active authorization requires an authenticated user.");
   if (!input.tenant) return fail("inactive_authorization", "Active authorization requires a tenant.");

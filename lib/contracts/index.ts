@@ -10,3 +10,5 @@ export * from "./tenantBootstrap";
 export * from "./tenantBootstrapFixtures";
 export * from "./serverAuth";
 export * from "./serverAuthFixtures";
+export * from "./authorization";
+export * from "./authorizationFixtures";
