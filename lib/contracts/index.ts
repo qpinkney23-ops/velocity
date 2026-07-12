@@ -12,3 +12,5 @@ export * from "./serverAuth";
 export * from "./serverAuthFixtures";
 export * from "./authorization";
 export * from "./authorizationFixtures";
+export * from "./authorizationAudit";
+export * from "./authorizationAuditFixtures";
