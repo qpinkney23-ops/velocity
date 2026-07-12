@@ -1,10 +1,21 @@
 import fs from "fs";
 import path from "path";
+import ts from "typescript";
 import { AUTHORIZATION_AUDIT_CLASSIFICATIONS, createAuthorizationAuditEvent, createAuthorizationCacheKey, parseAuthorizationAuditEvent } from "../lib/contracts/authorizationAudit";
 import { authorizationAuditFixtures as f } from "../lib/contracts/authorizationAuditFixtures";
 import { AUTHORIZATION_VERSION_INVALIDATION_MODEL, authorizationCachePolicy } from "../lib/server/authorization/authorizationCachePolicy";
 
 function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
+const approvedProductionImporter = "app/api/applications/[id]/route.ts";
+const approvedAuditImports = new Set(["../../../../lib/server/authorization/applicationAuthorizationOrchestrator", "../../../../lib/server/authorization/authorizationAuditPersistence"]);
+function importSpecifiers(source: string, file: string): string[] {
+  const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, file.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
+  return parsed.statements.flatMap((statement) => ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier) ? [statement.moduleSpecifier.text] : []);
+}
+function auditCacheIsolationViolation(file: string, source: string): boolean {
+  const normalized = file.replace(/\\/g, "/");
+  return importSpecifiers(source, normalized).some((specifier) => /(?:^|\/)(?:authorizationAudit(?:Persistence)?|authorizationCachePolicy)$/.test(specifier) && !(normalized === approvedProductionImporter && approvedAuditImports.has(specifier)));
+}
 function main() {
   for (const event of Object.values(f.events)) { const parsed = parseAuthorizationAuditEvent(event); assert(parsed.ok, `valid ${event.classification} event rejected`); }
   assert(!parseAuthorizationAuditEvent({}).ok && !parseAuthorizationAuditEvent(f.malformedEvent).ok, "malformed or PII event accepted");
@@ -20,7 +31,11 @@ function main() {
   assert(AUTHORIZATION_VERSION_INVALIDATION_MODEL.status === "provisional" && AUTHORIZATION_VERSION_INVALIDATION_MODEL.domains.length === 5, "version invalidation model changed");
   const before = JSON.stringify(f), result = createAuthorizationCacheKey(f.cacheInput as any); assert(result.ok && Object.isFrozen(result.value) && JSON.stringify(f) === before && Object.isFrozen(f), "inputs mutated or cache output mutable");
   for (const event of Object.values(f.events)) assert(!/borrower|email|loanAmount|credit|documentText|income|ssn/i.test(JSON.stringify(event)), "audit fixture contains PII");
-  const production = ["app", "components", "middleware.ts"].flatMap((root) => !fs.existsSync(root) ? [] : fs.statSync(root).isFile() ? [root] : [...fs.readdirSync(root, { recursive: true })].map(String).map((entry) => path.join(root, entry)).filter((file) => fs.statSync(file).isFile() && /\.(ts|tsx)$/.test(file))); assert(production.every((file) => !/authorizationAudit|authorizationCachePolicy/.test(fs.readFileSync(file, "utf8"))), "production imports audit/cache slice");
+  const production = ["app", "components", "middleware.ts"].flatMap((root) => !fs.existsSync(root) ? [] : fs.statSync(root).isFile() ? [root] : [...fs.readdirSync(root, { recursive: true })].map(String).map((entry) => path.join(root, entry)).filter((file) => fs.statSync(file).isFile() && /\.(ts|tsx)$/.test(file)));
+  assert(production.every((file) => !auditCacheIsolationViolation(file, fs.readFileSync(file, "utf8"))), "production imports audit/cache slice outside approved application read route");
+  assert(!auditCacheIsolationViolation(approvedProductionImporter, fs.readFileSync(approvedProductionImporter, "utf8")), "approved application read audit import rejected");
+  assert(auditCacheIsolationViolation("app/api/debug/route.ts", 'import { persistAuthorizationAuditEvent } from "../../../lib/server/authorization/authorizationAuditPersistence";'), "synthetic unauthorized route import accepted");
+  assert(auditCacheIsolationViolation("app/example/page.tsx", 'import { createAuthorizationAuditEvent } from "../../lib/contracts/authorizationAudit";'), "synthetic page/client import accepted");
   console.log("Authorization audit and cache policy regression: PASS");
   console.log("PASS: audit parsing/classification/PII exclusion, deterministic version invalidation, provisional cache policy, immutability and production isolation");
 }

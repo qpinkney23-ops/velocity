@@ -5,6 +5,16 @@ import { authenticateUserApiRequest, type UserApiAuthDependencies } from "../lib
 import { defineUserApiRoutePolicy } from "../lib/server/auth/userApiAuthPolicy";
 
 function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
+const approvedMigratedRoute = "applications/[id]/route.ts";
+function migratedUserApiRoutes(routes: ReadonlyMap<string, string>): string[] { return [...routes].filter(([, source]) => /\b(?:requireAuthenticatedUserRequest|authenticateUserApiRequest)\b/.test(source)).map(([route]) => route.replace(/\\/g, "/")); }
+function assertApprovedRouteMigration(routes: ReadonlyMap<string, string>, policySource: string) {
+  const migrated = migratedUserApiRoutes(routes);
+  assert(migrated.length === 1 && migrated[0] === approvedMigratedRoute, `production route migrated outside approved application read route: ${migrated.join(", ") || "none"}`);
+  const source = routes.get(approvedMigratedRoute) || "";
+  assert(/import\s*\{[^}]*requireAuthenticatedUserRequest[^}]*\}\s*from\s*["']\.\.\/\.\.\/\.\.\/\.\.\/lib\/server\/auth\/userApiAuth["']/.test(source), "approved route does not use canonical user API authentication boundary");
+  assert(/requireAuthenticatedUserRequest\s*\([^,]+,\s*APPLICATION_READ_ROUTE_POLICY\s*\)/s.test(source), "approved route does not apply its explicit authentication policy");
+  assert(/allowSessionCookie\s*:\s*true/.test(policySource) && /allowFirebaseBearer\s*:\s*false/.test(policySource), "approved route bearer/session policy is not explicit");
+}
 const csrf = "c".repeat(32);
 function request(input: Record<string, string> = {}, method = "POST") { const values = new Map(Object.entries(input).map(([k, v]) => [k.toLowerCase(), v])); return { method, headers: { get: (name: string) => values.get(name.toLowerCase()) ?? null } }; }
 function context(method: "session_cookie" | "firebase_id_token" = "session_cookie", correlationId = "corr_generated") { const parsed = parseServerAuthContext({ schemaVersion: SERVER_AUTH_CONTEXT_SCHEMA_VERSION, principal: { kind: "firebase_user", uid: "synthetic_api_user", authenticationMethod: method, tokenIssuedAt: "2026-07-11T20:00:00.000Z", authenticatedAt: "2026-07-11T20:00:00.000Z", emailVerified: true }, verifiedAt: "2026-07-11T20:01:00.000Z", revocationCheckedAt: "2026-07-11T20:01:00.000Z", requestId: "req_api_test", correlationId }); assert(parsed.ok, "user fixture invalid"); return parsed.value; }
@@ -38,7 +48,12 @@ async function main() {
   const authorizationPolicy = defineUserApiRoutePolicy({ ...basePolicy, requireAuthorizationContext: true }); const unresolved = await authenticateUserApiRequest(request(cookieHeaders), authorizationPolicy, dependencies()); assert(!unresolved.ok && unresolved.state === "authorization_required" && unresolved.authorization.status === "not_resolved" && unresolved.error.code === "AUTHORIZATION_REQUIRED", "authentication incorrectly satisfied authorization");
 
   for (const file of ["lib/server/auth/userApiAuth.ts", "lib/server/auth/userApiAuthCore.ts", "lib/server/auth/userApiAuthPolicy.ts"]) { const source = fs.readFileSync(file, "utf8"); assert(!/console\.|error\.message|error\.stack/.test(source), `${file} exposes internal errors`); }
-  const productionRoutes = [...fs.readdirSync("app/api", { recursive: true })].map(String).filter((entry) => /route\.ts$/.test(entry)); for (const entry of productionRoutes) { const source = fs.readFileSync(path.join("app/api", entry), "utf8"); assert(!/userApiAuth|requireAuthenticatedUserRequest/.test(source), `production route migrated: ${entry}`); }
+  const productionRoutes = [...fs.readdirSync("app/api", { recursive: true })].map(String).filter((entry) => /route\.ts$/.test(entry));
+  const routeSources = new Map(productionRoutes.map((entry) => [entry.replace(/\\/g, "/"), fs.readFileSync(path.join("app/api", entry), "utf8")]));
+  const policySource = fs.readFileSync("lib/server/applications/applicationReadRouteCore.ts", "utf8");
+  assertApprovedRouteMigration(routeSources, policySource);
+  const syntheticRoutes = new Map(routeSources); syntheticRoutes.set("analyze/route.ts", 'import { requireAuthenticatedUserRequest } from "../../../lib/server/auth/userApiAuth";');
+  let syntheticSecondRejected = false; try { assertApprovedRouteMigration(syntheticRoutes, policySource); } catch { syntheticSecondRejected = true; } assert(syntheticSecondRejected, "synthetic second route migration accepted");
   const guard = fs.readFileSync("lib/server/auth/userApiAuth.ts", "utf8"); assert(guard.includes('import "server-only"'), "canonical API guard is not server-only");
   const publicErrors = [oversized, unresolved].map((result) => JSON.stringify(result.error)); assert(publicErrors.every((text) => !/synthetic_api_user|synthetic-token|velocity_session|Firebase|stack/i.test(text)), "public error exposed sensitive data");
   console.log("User API authentication boundary regression: PASS");

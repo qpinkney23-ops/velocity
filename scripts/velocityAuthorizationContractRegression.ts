@@ -25,7 +25,30 @@ test("branch and assignment constraints are conservative", () => { const match =
 test("malformed context, resource and missing permission fail closed", () => { assert(!parseAuthorizationContext({}).ok, "malformed context parsed"); assert(!evaluate(f.contexts.activeOwner, f.policies.applicationRead, { ownershipState: "forged" }).ok, "malformed resource accepted"); assert(!evaluate(f.contexts.activeOwner, f.policies.missingPermission, f.resources.sameTenantApplication).ok, "missing permission accepted"); });
 test("inputs unchanged and outputs deeply immutable", () => { const before = JSON.stringify(f); const result = evaluate(f.contexts.activeViewer, f.policies.applicationRead, f.resources.sameTenantApplication); assert(result.ok && Object.isFrozen(result.decision) && Object.isFrozen(result.decision.constraintsEvaluated) && result.decision.constraintsEvaluated.every(Object.isFrozen) && Object.isFrozen(result.decision.audit), "decision is mutable"); assert(JSON.stringify(f) === before && Object.isFrozen(f), "fixtures mutated"); assert(parseAuthorizationDecision(result.decision).ok, "decision contract invalid"); });
 test("decisions contain no PII", () => { const result = evaluate(f.contexts.activeViewer, f.policies.applicationRead, f.resources.sameTenantApplication); assert(result.ok && !/email|borrower|documentText|ssn|token|cookie/i.test(JSON.stringify(result.decision)), "decision contains PII or credential data"); });
-test("no production imports", () => { const roots = ["app", "components", "middleware.ts", "lib/firebase.ts", "lib/firebase-admin.ts"]; const files: string[] = []; for (const root of roots) { if (!fs.existsSync(root)) continue; if (fs.statSync(root).isFile()) files.push(root); else for (const entry of fs.readdirSync(root, { recursive: true })) { const file = path.join(root, String(entry)); if (fs.statSync(file).isFile() && /\.(ts|tsx|js|jsx)$/.test(file)) files.push(file); } } assert(files.every((file) => !/contracts\/authorization|authorizationFixtures|server\/authorization|permissionPolicy/.test(fs.readFileSync(file, "utf8").replace(/\\/g, "/"))), "production imports authorization slice"); });
+test("no production imports", () => {
+  const roots = ["app", "components", "middleware.ts", "lib/firebase.ts", "lib/firebase-admin.ts"];
+  const files: string[] = [];
+  const importSpecifiers = (source: string) => [...source.matchAll(/(?:import|export)\s+(?:[^"']*?\s+from\s+)?["']([^"']+)["']|require\(["']([^"']+)["']\)/g)].map((match) => (match[1] || match[2]).replace(/\\/g, "/"));
+  const forbiddenDocumentResolverImport = (specifier: string) => /(?:^|\/)applicationDocumentResourceResolver(?:Core)?$/.test(specifier.replace(/\.(?:js|jsx|ts|tsx)$/, ""));
+  const forbiddenContractImport = (specifier: string) => /(?:^|\/)contracts\/authorization(?:Fixtures)?$|(?:^|\/)server\/authorization\/permissionPolicy$/.test(specifier.replace(/\.(?:js|jsx|ts|tsx)$/, ""));
+  for (const root of roots) {
+    if (!fs.existsSync(root)) continue;
+    if (fs.statSync(root).isFile()) files.push(root);
+    else for (const entry of fs.readdirSync(root, { recursive: true })) {
+      const file = path.join(root, String(entry));
+      if (fs.statSync(file).isFile() && /\.(ts|tsx|js|jsx)$/.test(file)) files.push(file);
+    }
+  }
+  for (const file of files) {
+    const imports = importSpecifiers(fs.readFileSync(file, "utf8"));
+    assert(!imports.some(forbiddenDocumentResolverImport), `${file} imports the document resolver`);
+    assert(!imports.some(forbiddenContractImport), `${file} imports authorization contracts or policy`);
+  }
+  for (const synthetic of [
+    'import { resolveApplicationDocumentResourceFacts } from "../lib/server/authorization/applicationDocumentResourceResolver";',
+    'import { resolveApplicationDocumentResourceFactsCore } from "../../lib/server/authorization/applicationDocumentResourceResolverCore";',
+  ]) assert(importSpecifiers(synthetic).some(forbiddenDocumentResolverImport), "synthetic client/page/route resolver import was not rejected");
+});
 test("matrix is provisional and complete by role", () => { assert(PROVISIONAL_ROLE_PERMISSION_MATRIX.status === "provisional_product_review_required" && Object.keys(PROVISIONAL_ROLE_PERMISSION_MATRIX.roles).sort().join(",") === ["admin", "loan_officer", "owner", "processor", "service_account", "underwriter", "unknown", "viewer"].sort().join(","), "provisional matrix vocabulary changed"); });
 
 let passed = 0; for (const [name, run] of tests) { try { run(); passed += 1; console.log(`PASS: ${name}`); } catch (error) { console.error(`FAIL: ${name}: ${error instanceof Error ? error.message : String(error)}`); } }
