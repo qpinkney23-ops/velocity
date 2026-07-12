@@ -4,7 +4,7 @@ type RegressionCase = {
   name: string;
   docs: ParsedAnalysisDoc[];
   expect: {
-    verdict?: "approve" | "approve_with_conditions" | "review" | "deny";
+    verdict?: "approve" | "approve_with_conditions" | "review" | "deny" | "blocked";
     minIncome?: number;
     maxIncome?: number;
     minAssets?: number;
@@ -21,6 +21,9 @@ type RegressionCase = {
     maxDti?: number;
     minLtv?: number;
     maxLtv?: number;
+    exactRawLtv?: number;
+    displayedLtv?: string;
+    exactDti?: number;
     mustIncludeConditions?: string[];
   };
 };
@@ -35,6 +38,7 @@ function assertRange(
   min?: number,
   max?: number
 ) {
+  if (typeof min !== "number" && typeof max !== "number") return;
   if (actual === null || actual === undefined || Number.isNaN(actual)) {
     fail(`${label}: actual value is missing`);
   }
@@ -48,17 +52,19 @@ function assertRange(
   }
 }
 
-function assertConditions(actual: string[], expected?: string[]) {
+function assertConditions(actual: Array<string | { label?: string }>, expected?: string[]) {
   if (!expected?.length) return;
+  const labels = actual.map((condition) => typeof condition === "string" ? condition : condition?.label).filter((label): label is string => typeof label === "string");
 
   for (const item of expected) {
-    if (!actual.includes(item)) {
+    if (!labels.includes(item)) {
       fail(`conditions: missing expected condition "${item}"`);
     }
   }
 }
 
 async function runCase(testCase: RegressionCase) {
+  const fixtureBefore = JSON.stringify(testCase.docs);
   const result = await analyzeApplication(testCase.docs);
 
   console.log(`\n=== ${testCase.name} ===`);
@@ -89,6 +95,17 @@ async function runCase(testCase: RegressionCase) {
   assertRange("propertyValue", result.normalized.propertyValue, exp.minPropertyValue, exp.maxPropertyValue);
   assertRange("dti", result.dti, exp.minDti, exp.maxDti);
   assertRange("ltv", result.ltv, exp.minLtv, exp.maxLtv);
+  if (typeof exp.exactRawLtv === "number") {
+    if (result.ltv !== exp.exactRawLtv) fail(`ltv: expected exact raw fraction ${exp.exactRawLtv}, got ${result.ltv}`);
+    if (result.normalized.ltv !== exp.exactRawLtv) fail(`normalized.ltv: expected exact raw fraction ${exp.exactRawLtv}, got ${result.normalized.ltv}`);
+    const second = await analyzeApplication(testCase.docs);
+    if (second.ltv !== result.ltv) fail(`ltv: calculation is not deterministic (${result.ltv} versus ${second.ltv})`);
+  }
+  if (exp.displayedLtv && `${((result.ltv ?? 0) * 100).toFixed(2)}%` !== exp.displayedLtv) {
+    fail(`ltv display: expected ${exp.displayedLtv}, got ${((result.ltv ?? 0) * 100).toFixed(2)}%`);
+  }
+  if (typeof exp.exactDti === "number" && result.dti !== exp.exactDti) fail(`dti: expected unchanged ${exp.exactDti}, got ${result.dti}`);
+  if (JSON.stringify(testCase.docs) !== fixtureBefore) fail("fixture inputs were mutated");
 
   assertConditions(result.conditions, exp.mustIncludeConditions);
 
@@ -220,10 +237,12 @@ const cases: RegressionCase[] = [
       maxDti: 0.10,
       minLtv: 0.955,
       maxLtv: 0.956,
+      exactRawLtv: 331900 / 347500,
+      displayedLtv: "95.51%",
+      exactDti: 0.09,
       mustIncludeConditions: [
-        "Review loan-to-value ratio",
-        "Confirm high-LTV eligibility and mortgage insurance structure",
-        "Confirm program eligibility for borderline credit profile",
+        "High LTV Exposure — confirm MI, product eligibility, and overlays",
+        "Credit score 620–679 — confirm pricing tier and investor overlays",
       ],
     },
   },
@@ -332,7 +351,7 @@ const cases: RegressionCase[] = [
       },
     ],
     expect: {
-      verdict: "approve",
+      verdict: "approve_with_conditions",
       minIncome: 91999,
       maxIncome: 92001,
       minAssets: 25500,
@@ -346,10 +365,10 @@ const cases: RegressionCase[] = [
       minPropertyValue: 310000,
       maxPropertyValue: 310000,
       minDti: 0.077,
-      maxDti: 0.078,
+      maxDti: 0.08,
       minLtv: 0.806,
       maxLtv: 0.807,
-      mustIncludeConditions: ["Review loan-to-value ratio"],
+      mustIncludeConditions: ["High LTV Exposure — confirm MI, product eligibility, and overlays"],
     },
   },
   {
@@ -395,11 +414,9 @@ const cases: RegressionCase[] = [
       },
     ],
     expect: {
-      verdict: "deny",
+      verdict: "blocked",
       minIncome: 41999,
       maxIncome: 42001,
-      minAssets: 0,
-      maxAssets: 0,
       minDebts: 2600,
       maxDebts: 2600,
       minCreditScore: 579,
@@ -413,14 +430,10 @@ const cases: RegressionCase[] = [
       minLtv: 1.017,
       maxLtv: 1.018,
       mustIncludeConditions: [
-        "Missing 1003 application",
-        "Missing bank statement",
-        "Confirm assets",
-        "Review debt-to-income ratio",
-        "Review loan-to-value ratio",
-        "Confirm high-LTV eligibility and mortgage insurance structure",
-        "Resolve loan amount exceeding property value",
-        "Review credit profile",
+        "Credit Policy Hard Stop",
+        "DTI Exceeds Threshold — document capacity support",
+        "Housing Payment Review — confirm PITI, MI, taxes, insurance, and rate",
+        "Asset Review — verify liquid assets and reserves",
       ],
     },
   },

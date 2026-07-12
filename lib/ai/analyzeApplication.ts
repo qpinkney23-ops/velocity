@@ -910,7 +910,7 @@ function computeDTI(income: number | null, debts: number | null) {
 function computeLTV(loanAmount: number | null, propertyValue: number | null) {
   if (!loanAmount || !propertyValue) return null;
   if (propertyValue <= 0) return null;
-  return round2(loanAmount / propertyValue);
+  return loanAmount / propertyValue;
 }
 
 function uniqueSortedCreditScores(values: Array<number | null | undefined>) {
