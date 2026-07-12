@@ -33,6 +33,8 @@
     "velocity:authorization:resolver": "npm run velocity:authorization:resolver:contract && npx tsx scripts/velocityTenantAuthorizationResolverRunner.ts",
     "velocity:authorization:decision": "npx tsx scripts/velocityAuthorizationDecisionRegression.ts",
     "velocity:authorization:audit-cache": "npx tsx scripts/velocityAuthorizationAuditCacheRegression.ts",
+    "velocity:authorization:application-resource": "npx tsx scripts/velocityApplicationResourceResolverRegression.ts",
+    "velocity:authorization:application-resource:emulator": "firebase emulators:exec --config firebase.tenant-auth.test.json --project demo-velocity-application-resource --only firestore \"npx tsx scripts/velocityApplicationResourceResolverEmulatorRegression.ts\"",
     "velocity:regressions": "npx tsx scripts/velocityRegressionSuite.ts",
     "velocity:check": "npm run build && npm run velocity:regressions"
   },
