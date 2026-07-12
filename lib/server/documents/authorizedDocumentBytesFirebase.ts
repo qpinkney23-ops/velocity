@@ -1,0 +1,4 @@
+import "server-only";
+import { getStorage } from "firebase-admin/storage";
+import { retrieveAuthorizedDocumentBytesCore, type RetrieveAuthorizedDocumentBytesInput } from "./authorizedDocumentBytes";
+export const retrieveAuthorizedDocumentBytes=(input:RetrieveAuthorizedDocumentBytesInput)=>retrieveAuthorizedDocumentBytesCore(input,{getMetadata:async(path,bucket)=>{const [m]=await getStorage().bucket(bucket).file(path).getMetadata();return{exists:true,sizeBytes:Number(m.size),contentType:m.contentType,...(m.generation!==undefined?{generation:String(m.generation)}:{}),...(m.metageneration!==undefined?{metageneration:String(m.metageneration)}:{})}},readBytes:async(path,o)=>{const [b]=await getStorage().bucket(o.bucket).file(path,o.generation?{generation:o.generation}:undefined).download({validation:"crc32c"});if(o.signal.aborted)throw Error("aborted");if(b.byteLength>o.maximumBytes)throw Error("bounded read exceeded");return new Uint8Array(b)}});
