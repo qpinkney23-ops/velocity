@@ -7,7 +7,7 @@ import { applicationPolicyForPermission, type ApplicationActionPolicyV1 } from "
 import type { AuthorizationDecisionResult } from "./authorizationDecisionCore";
 import type { TenantAuthorizationResolverResult } from "./tenantAuthorizationResolverCore";
 
-export const APPLICATION_AUTHORIZATION_PUBLIC_CODES = ["RESOURCE_NOT_AVAILABLE", "FORBIDDEN", "AUTHORIZATION_REQUIRED", "INTERNAL_ERROR"] as const;
+export const APPLICATION_AUTHORIZATION_PUBLIC_CODES = ["TENANT_SELECTION_REQUIRED", "RESOURCE_NOT_AVAILABLE", "FORBIDDEN", "AUTHORIZATION_REQUIRED", "INTERNAL_ERROR"] as const;
 export type ApplicationAuthorizationPublicCode = typeof APPLICATION_AUTHORIZATION_PUBLIC_CODES[number];
 export type ApplicationAuthorizationFailureCode = "AUTH_INVALID" | "POLICY_INVALID" | "TENANT_RESOLUTION_FAILED" | "APPLICATION_RESOLUTION_FAILED" | "RESOURCE_FACTS_INVALID" | "DECISION_INVALID" | "DECISION_DENIED" | "AUDIT_PLAN_INVALID" | "INTERNAL_ERROR";
 export type ApplicationAuthorizationSuccess = Readonly<{ ok: true; context: AuthorizationContextV1; applicationFacts: ResolvedApplicationResourceFactsV1; decision: AuthorizationDecisionV1 & Readonly<{ decision: "allow" }>; auditPlan: AuthorizationAuditEventV1 }>;
@@ -24,6 +24,7 @@ export type ApplicationAuthorizationDependencies = Readonly<{
 const PUBLIC = Object.freeze({
   AUTHORIZATION_REQUIRED: Object.freeze({ code: "AUTHORIZATION_REQUIRED" as const, status: 401 as const, message: "Authentication is required." }),
   FORBIDDEN: Object.freeze({ code: "FORBIDDEN" as const, status: 403 as const, message: "The requested action is not available." }),
+  TENANT_SELECTION_REQUIRED: Object.freeze({ code: "TENANT_SELECTION_REQUIRED" as const, status: 403 as const, message: "A tenant selection is required." }),
   RESOURCE_NOT_AVAILABLE: Object.freeze({ code: "RESOURCE_NOT_AVAILABLE" as const, status: 404 as const, message: "The requested resource is not available." }),
   INTERNAL_ERROR: Object.freeze({ code: "INTERNAL_ERROR" as const, status: 500 as const, message: "Authorization could not be completed." }),
 });
@@ -49,7 +50,7 @@ export async function authorizeApplicationActionCore(input: AuthorizeApplication
   const policy = input.policy as ApplicationActionPolicyV1; const canonicalPolicy = applicationPolicyForPermission(input.permission);
   if (!canonicalPolicy || !policy || policy.permission !== canonicalPolicy.permission || policy.resourceType !== "application" || policy.policyVersion !== AUTHORIZATION_POLICY_VERSION || policy.acceptedPrincipalKind !== "firebase_user" || policy.status !== "provisional_product_review_required" || !Array.isArray(policy.requiredConstraints)) return fail("POLICY_INVALID", "policy_invalid", "FORBIDDEN");
   dependencies.onStep?.("resolve_tenant"); const tenant = await dependencies.resolveTenant({ authentication: auth.value, ...(input.requestedTenantId !== undefined ? { requestedTenantId: input.requestedTenantId } : {}) });
-  if (!tenant.ok) { const reason: AuthorizationDenialReason = tenant.error.code === "INTERNAL_ERROR" ? "internal_error" : tenant.error.code.includes("MEMBERSHIP") ? "membership_missing" : tenant.error.code.includes("INACTIVE") ? "tenant_inactive" : tenant.error.code === "ROLE_UNKNOWN" ? "role_unknown" : "tenant_required"; return fail("TENANT_RESOLUTION_FAILED", tenant.error.code, tenant.error.code === "AUTH_INVALID" ? "AUTHORIZATION_REQUIRED" : tenant.error.code === "INTERNAL_ERROR" ? "INTERNAL_ERROR" : "FORBIDDEN", earlyDenyAudit(auth.value, policy.permission, input.applicationId, input.evaluatedAt, reason)); }
+  if (!tenant.ok) { const reason: AuthorizationDenialReason = tenant.error.code === "INTERNAL_ERROR" ? "internal_error" : tenant.error.code.includes("MEMBERSHIP") ? "membership_missing" : tenant.error.code.includes("INACTIVE") ? "tenant_inactive" : tenant.error.code === "ROLE_UNKNOWN" ? "role_unknown" : "tenant_required"; return fail("TENANT_RESOLUTION_FAILED", tenant.error.code, tenant.error.code === "AUTH_INVALID" ? "AUTHORIZATION_REQUIRED" : tenant.error.code === "TENANT_SELECTION_REQUIRED" ? "TENANT_SELECTION_REQUIRED" : tenant.error.code === "INTERNAL_ERROR" ? "INTERNAL_ERROR" : "FORBIDDEN", earlyDenyAudit(auth.value, policy.permission, input.applicationId, input.evaluatedAt, reason)); }
   const context = tenant.context;
   dependencies.onStep?.("resolve_application"); const application = await dependencies.resolveApplication({ applicationId: input.applicationId, requestId: auth.value.requestId, correlationId: auth.value.correlationId });
   if (!application.ok) {

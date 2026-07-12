@@ -1,0 +1,23 @@
+import { validateApplicationId, validateTenantId } from "../../contracts/primitives";
+import { projectApplicationReadResponse } from "../../contracts/applicationReadResponse";
+import { APPLICATION_ACTION_POLICIES } from "../authorization/applicationActionPolicies";
+import type { ApplicationAuthorizationResult } from "../authorization/applicationAuthorizationOrchestratorCore";
+import type { UserApiAuthResult } from "../auth/userApiAuthCore";
+
+export const APPLICATION_READ_ROUTE_POLICY = Object.freeze({ routeId: "api.applications.id.read", allowedPrincipalKind: "firebase_user" as const, allowSessionCookie: true, allowFirebaseBearer: false, requireAuthorizationContext: false, allowedMethods: Object.freeze(["GET"]), csrfMode: "none" as const, originPolicy: "none" as const, auditAction: "application.read", productionEnabled: true, trustIncomingCorrelationId: true });
+export type ApplicationReadRouteDependencies = Readonly<{ authenticate(request: Request): Promise<UserApiAuthResult>; authorize(input: any): Promise<ApplicationAuthorizationResult>; persist(event: unknown, context: any): Promise<{ ok: boolean }>; now(): Date; onStep?(step: string): void }>;
+const headers = (requestId?: string, correlationId?: string) => ({ "cache-control": "private, no-store", ...(requestId ? { "x-request-id": requestId } : {}), ...(correlationId ? { "x-correlation-id": correlationId } : {}) });
+const json = (body: unknown, status: number, requestId?: string, correlationId?: string) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers(requestId, correlationId) } });
+
+export async function executeApplicationReadRoute(request: Request, applicationIdInput: unknown, dependencies: ApplicationReadRouteDependencies): Promise<Response> {
+  dependencies.onStep?.("validate_method"); if (request.method !== "GET") return json({ ok: false, error: { code: "FORBIDDEN", message: "The requested action is not available." } }, 405);
+  dependencies.onStep?.("authenticate"); const authentication = await dependencies.authenticate(request); if (!authentication.ok) { const correlationId = "context" in authentication ? authentication.context.correlationId : authentication.correlationId; return json({ ok: false, error: authentication.error, correlationId }, authentication.error.status, authentication.error.requestId, correlationId); }
+  const { requestId, correlationId } = authentication.context;
+  dependencies.onStep?.("validate_application_id"); const applicationId = validateApplicationId(applicationIdInput); if (!applicationId.ok) return json({ ok: false, error: { code: "RESOURCE_NOT_AVAILABLE", message: "The requested resource is not available." }, requestId, correlationId }, 404, requestId, correlationId);
+  dependencies.onStep?.("resolve_tenant_selection"); const tenantHeader = request.headers.get("x-velocity-tenant-id"); let requestedTenantId: string | undefined; if (tenantHeader !== null) { const parsed = validateTenantId(tenantHeader); if (!parsed.ok) return json({ ok: false, error: { code: "FORBIDDEN", message: "The requested action is not available." }, requestId, correlationId }, 403, requestId, correlationId); requestedTenantId = parsed.value; }
+  dependencies.onStep?.("authorize"); const authorization = await dependencies.authorize({ authentication: authentication.context, ...(requestedTenantId ? { requestedTenantId } : {}), applicationId: applicationId.value, permission: "application.read", policy: APPLICATION_ACTION_POLICIES.read, evaluatedAt: dependencies.now().toISOString() });
+  dependencies.onStep?.("require_audit_plan"); if (!authorization.auditPlan) return json({ ok: false, error: { code: "AUDIT_REQUIRED", message: "The request could not be audited." }, requestId, correlationId }, 500, requestId, correlationId);
+  dependencies.onStep?.("persist_audit"); const tenantId = authorization.auditPlan.tenantId; if (!tenantId || !(await dependencies.persist(authorization.auditPlan, { scope: "tenant", tenantId, persistedAt: dependencies.now().toISOString() })).ok) return json({ ok: false, error: { code: "INTERNAL_ERROR", message: "The request could not be completed." }, requestId, correlationId }, 500, requestId, correlationId);
+  if (!authorization.ok) { dependencies.onStep?.("respond_denial"); return json({ ok: false, error: authorization.publicError, requestId, correlationId }, authorization.publicError.status, requestId, correlationId); }
+  dependencies.onStep?.("project_response"); const response = projectApplicationReadResponse(authorization.applicationFacts, requestId, correlationId); dependencies.onStep?.("respond_allow"); return json(response, 200, requestId, correlationId);
+}

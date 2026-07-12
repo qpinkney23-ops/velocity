@@ -15,6 +15,8 @@ export type ResolvedApplicationResourceFactsV1 = Readonly<{
   tenantId?: TenantId;
   resourceAuthorizationVersion: string;
   applicationStatus: string;
+  createdAt?: IsoTimestamp;
+  updatedAt?: IsoTimestamp;
   createdBy?: UserId;
   assignedUnderwriterId?: UserId;
   assignedProcessorId?: UserId;
