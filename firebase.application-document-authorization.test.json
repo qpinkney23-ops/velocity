@@ -1,0 +1,1 @@
+{"firestore":{"rules":"tests/tenant-authorization/firestore.test.rules"},"storage":{"rules":"tests/tenant-authorization/storage.test.rules"},"emulators":{"firestore":{"port":8186},"storage":{"port":9296},"ui":{"enabled":false}}}

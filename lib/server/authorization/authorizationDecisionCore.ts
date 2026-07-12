@@ -34,6 +34,7 @@ export function evaluateAuthorizationDecisionCore(input: AuthorizationDecisionIn
     if (constraint === "active_tenant") pass = context.tenantStatus === "active";
     else if (constraint === "active_membership") pass = human && context.membershipStatus === "active";
     else if (constraint === "same_tenant" || constraint === "resource_tenant_match") pass = facts.tenantId === context.tenantId;
+    else if (constraint === "application_document_relationship_match") pass = facts.resourceType === "application_document" && facts.applicationDocumentRelationshipVerified === true;
     else if (constraint === "branch_match") pass = human && !!facts.branchId && !!context.branchIds?.includes(facts.branchId);
     else if (constraint === "team_match") pass = human && facts.teamIds.some((id) => context.teamIds?.includes(id));
     else if (constraint === "assigned_to_user") pass = human && facts.assignedUserIds.includes(context.authentication.principalId as any);

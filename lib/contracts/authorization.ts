@@ -19,14 +19,14 @@ export const AUTHORIZATION_PERMISSIONS = [
 ] as const;
 export type AuthorizationPermission = typeof AUTHORIZATION_PERMISSIONS[number];
 
-export const AUTHORIZATION_CONSTRAINTS = ["same_tenant", "active_tenant", "active_membership", "resource_tenant_match", "branch_match", "team_match", "assigned_to_user", "assigned_to_team", "creator_match", "unresolved_legacy_denied", "service_scope_match"] as const;
+export const AUTHORIZATION_CONSTRAINTS = ["same_tenant", "active_tenant", "active_membership", "resource_tenant_match", "application_document_relationship_match", "branch_match", "team_match", "assigned_to_user", "assigned_to_team", "creator_match", "unresolved_legacy_denied", "service_scope_match"] as const;
 export type AuthorizationConstraint = typeof AUTHORIZATION_CONSTRAINTS[number];
 export type ConstraintEvaluation = Readonly<{ constraint: AuthorizationConstraint; result: "pass" | "fail" | "not_applicable" }>;
 
 export const AUTHORIZATION_DENIAL_REASONS = ["authentication_required", "tenant_required", "tenant_inactive", "membership_missing", "membership_inactive", "role_unknown", "permission_missing", "resource_not_found", "resource_tenant_mismatch", "branch_scope_denied", "team_scope_denied", "assignment_scope_denied", "unresolved_legacy", "service_scope_denied", "policy_invalid", "internal_error"] as const;
 export type AuthorizationDenialReason = typeof AUTHORIZATION_DENIAL_REASONS[number];
 export type AuthorizationReason = "authorized" | AuthorizationDenialReason;
-export const AUTHORIZATION_RESOURCE_TYPES = ["application", "document", "condition", "assignment", "decision", "report", "export", "queue", "tenant", "membership", "configuration", "billing", "audit", "service_job"] as const;
+export const AUTHORIZATION_RESOURCE_TYPES = ["application", "application_document", "document", "condition", "assignment", "decision", "report", "export", "queue", "tenant", "membership", "configuration", "billing", "audit", "service_job"] as const;
 export type AuthorizationResourceType = typeof AUTHORIZATION_RESOURCE_TYPES[number];
 
 export type SafeAuthenticationProjectionV1 = Readonly<{ principalKind: ServerPrincipalKind; principalId: string; requestId: RequestId; correlationId: CorrelationId }>;
@@ -60,7 +60,7 @@ export type ResolvedResourceFactsV1 = Readonly<{
   schemaVersion: typeof RESOLVED_RESOURCE_FACTS_V1; resourceType: AuthorizationResourceType; resourceId: string;
   tenantId?: TenantId; branchId?: BranchId; teamIds: readonly TeamId[]; assignedUserIds: readonly UserId[]; assignedTeamIds: readonly TeamId[];
   creatorId?: UserId; legacyState: "tenant_owned" | "unresolved_legacy" | "migration_pending" | "migration_rejected" | "not_applicable";
-  resourceStatus: string;
+  resourceStatus: string; applicationDocumentRelationshipVerified?: boolean;
 }>;
 
 export type AuthorizationContractResult<T> = Readonly<{ ok: true; value: T }> | Readonly<{ ok: false; code: "invalid_authorization_contract" }>;
@@ -97,6 +97,6 @@ export function parseResolvedResourceFacts(input: unknown): AuthorizationContrac
   if (!input || typeof input !== "object" || Array.isArray(input)) return fail(); const raw = input as Record<string, any>;
   const tenantId = raw.tenantId === undefined ? undefined : validateTenantId(raw.tenantId), branchId = raw.branchId === undefined ? undefined : validateBranchId(raw.branchId);
   const teamIds = uniqueIds(raw.teamIds, validateTeamId), assignedUserIds = uniqueIds(raw.assignedUserIds, validateUserId), assignedTeamIds = uniqueIds(raw.assignedTeamIds, validateTeamId); const creatorId = raw.creatorId === undefined ? undefined : validateUserId(raw.creatorId);
-  if (raw.schemaVersion !== RESOLVED_RESOURCE_FACTS_V1 || !AUTHORIZATION_RESOURCE_TYPES.includes(raw.resourceType) || !SAFE_ID.test(raw.resourceId || "") || (tenantId && !tenantId.ok) || (branchId && !branchId.ok) || !teamIds || !assignedUserIds || !assignedTeamIds || (creatorId && !creatorId.ok) || !["tenant_owned", "unresolved_legacy", "migration_pending", "migration_rejected", "not_applicable"].includes(raw.legacyState) || !SAFE_ID.test(raw.resourceStatus || "")) return fail();
-  return Object.freeze({ ok: true, value: Object.freeze({ schemaVersion: RESOLVED_RESOURCE_FACTS_V1, resourceType: raw.resourceType, resourceId: raw.resourceId, ...(tenantId?.ok ? { tenantId: tenantId.value } : {}), ...(branchId?.ok ? { branchId: branchId.value } : {}), teamIds, assignedUserIds, assignedTeamIds, ...(creatorId?.ok ? { creatorId: creatorId.value } : {}), legacyState: raw.legacyState, resourceStatus: raw.resourceStatus }) });
+  if (raw.schemaVersion !== RESOLVED_RESOURCE_FACTS_V1 || !AUTHORIZATION_RESOURCE_TYPES.includes(raw.resourceType) || !SAFE_ID.test(raw.resourceId || "") || (tenantId && !tenantId.ok) || (branchId && !branchId.ok) || !teamIds || !assignedUserIds || !assignedTeamIds || (creatorId && !creatorId.ok) || !["tenant_owned", "unresolved_legacy", "migration_pending", "migration_rejected", "not_applicable"].includes(raw.legacyState) || !SAFE_ID.test(raw.resourceStatus || "") || (raw.applicationDocumentRelationshipVerified !== undefined && typeof raw.applicationDocumentRelationshipVerified !== "boolean")) return fail();
+  return Object.freeze({ ok: true, value: Object.freeze({ schemaVersion: RESOLVED_RESOURCE_FACTS_V1, resourceType: raw.resourceType, resourceId: raw.resourceId, ...(tenantId?.ok ? { tenantId: tenantId.value } : {}), ...(branchId?.ok ? { branchId: branchId.value } : {}), teamIds, assignedUserIds, assignedTeamIds, ...(creatorId?.ok ? { creatorId: creatorId.value } : {}), legacyState: raw.legacyState, resourceStatus: raw.resourceStatus, ...(raw.applicationDocumentRelationshipVerified !== undefined ? { applicationDocumentRelationshipVerified: raw.applicationDocumentRelationshipVerified } : {}) }) });
 }
