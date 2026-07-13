@@ -49,6 +49,7 @@
     "velocity:documents:processing:real": "npx tsx scripts/velocityAuthorizedDocumentRealProcessingRegression.ts",
     "velocity:evidence": "npx tsx scripts/velocityDocumentEvidenceRegression.ts",
     "velocity:evidence:application": "npx tsx scripts/velocityApplicationEvidenceRegression.ts",
+    "velocity:evidence:review": "npx tsx scripts/velocityEvidenceReviewRegression.ts",
     "velocity:authorization:application:emulator": "firebase emulators:exec --config firebase.tenant-auth.test.json --project demo-velocity-application-authorization --only firestore \"npx tsx scripts/velocityApplicationAuthorizationOrchestrationEmulatorRegression.ts\"",
     "velocity:authorization:audit-persistence": "npx tsx scripts/velocityAuthorizationAuditPersistenceRegression.ts",
     "velocity:authorization:audit-persistence:emulator": "firebase emulators:exec --config firebase.tenant-auth.test.json --project demo-velocity-authorization-audit-persistence --only firestore \"npx tsx scripts/velocityAuthorizationAuditPersistenceEmulatorRegression.ts\"",
