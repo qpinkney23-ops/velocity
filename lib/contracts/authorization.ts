@@ -16,6 +16,7 @@ export const AUTHORIZATION_PERMISSIONS = [
   "report.generate", "report.read", "export.generate", "queue.read", "queue.manage", "tenant.read", "tenant.manage",
   "membership.read", "membership.invite", "membership.manage", "configuration.read", "configuration.manage",
   "billing.read", "billing.manage", "audit.read", "audit.export", "service.files.process", "service.ai.process", "service.scheduler.run",
+  "evidence.read", "evidence.review", "evidence.verify", "evidence.dispute", "evidence.revoke",
 ] as const;
 export type AuthorizationPermission = typeof AUTHORIZATION_PERMISSIONS[number];
 
@@ -26,7 +27,7 @@ export type ConstraintEvaluation = Readonly<{ constraint: AuthorizationConstrain
 export const AUTHORIZATION_DENIAL_REASONS = ["authentication_required", "tenant_required", "tenant_inactive", "membership_missing", "membership_inactive", "role_unknown", "permission_missing", "resource_not_found", "resource_tenant_mismatch", "branch_scope_denied", "team_scope_denied", "assignment_scope_denied", "unresolved_legacy", "service_scope_denied", "policy_invalid", "internal_error"] as const;
 export type AuthorizationDenialReason = typeof AUTHORIZATION_DENIAL_REASONS[number];
 export type AuthorizationReason = "authorized" | AuthorizationDenialReason;
-export const AUTHORIZATION_RESOURCE_TYPES = ["application", "application_document", "document", "condition", "assignment", "decision", "report", "export", "queue", "tenant", "membership", "configuration", "billing", "audit", "service_job"] as const;
+export const AUTHORIZATION_RESOURCE_TYPES = ["application", "application_document", "document", "evidence", "condition", "assignment", "decision", "report", "export", "queue", "tenant", "membership", "configuration", "billing", "audit", "service_job"] as const;
 export type AuthorizationResourceType = typeof AUTHORIZATION_RESOURCE_TYPES[number];
 
 export type SafeAuthenticationProjectionV1 = Readonly<{ principalKind: ServerPrincipalKind; principalId: string; requestId: RequestId; correlationId: CorrelationId }>;

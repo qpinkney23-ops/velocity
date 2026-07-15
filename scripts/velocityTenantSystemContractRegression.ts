@@ -74,17 +74,60 @@ function malformedInputsAreSafe() {
   assert(!/Date\.now\(|new Date\(|randomUUID\(|Math\.random\(/.test(source), "contracts invent no identity or time");
 }
 
+const TENANT_IMPORT_POLICY_VERSION = "sec-002-tenant-import-policy.v1";
+const APPROVED_TENANT_CONSUMERS = Object.freeze([
+  "lib/server/authorization/applicationAuthorizationOrchestratorCore.ts",
+  "lib/server/authorization/applicationDocumentAuthorizationOrchestratorCore.ts",
+  "lib/server/authorization/authorizationDecisionCore.ts",
+  "lib/server/authorization/permissionPolicy.ts",
+  "lib/server/authorization/tenantAuthorizationResolverCore.ts",
+] as const);
+const TENANT_CONTRACT_BINDINGS = new Set(["TenantV1", "TenantMembershipV1", "TenantRole", "AuthorizationContextV1", "AnyAuthorizationContextV1", "createAuthorizationContext", "parseTenant", "parseTenantMembership", "parseLegacyOwnership"]);
+type SourceRecord = Readonly<{ file: string; source: string }>;
+
+function staticImports(source: string) {
+  const imports: Array<Readonly<{ specifier: string; bindings: readonly string[] }>> = [];
+  const expression = /import\s+(?:type\s+)?([\s\S]*?)\s+from\s+["']([^"']+)["']/g;
+  for (const match of source.matchAll(expression)) {
+    const named = match[1].match(/\{([\s\S]*?)\}/)?.[1] ?? "";
+    const bindings = named.split(",").map(value => value.trim().replace(/^type\s+/, "").split(/\s+as\s+/)[0]).filter(Boolean);
+    imports.push(Object.freeze({ specifier: match[2], bindings: Object.freeze(bindings) }));
+  }
+  return Object.freeze(imports);
+}
+
+function tenantImportViolations(records: readonly SourceRecord[]) {
+  const approved = new Set<string>(APPROVED_TENANT_CONSUMERS);
+  return records.flatMap(record => {
+    const consumesTenantAuthority = staticImports(record.source).some(entry =>
+      /(?:^|\/)contracts(?:\/tenantSystem|\/authorization)?$/.test(entry.specifier) && entry.bindings.some(binding => TENANT_CONTRACT_BINDINGS.has(binding))
+    );
+    return consumesTenantAuthority && !approved.has(record.file.replace(/\\/g, "/")) ? [record.file.replace(/\\/g, "/")] : [];
+  });
+}
+
 function noProductionImports() {
-  const violations: string[] = [];
-  const visit = (relative: string) => { for (const entry of fs.readdirSync(relative, { withFileTypes: true })) { const child = path.join(relative, entry.name); if (entry.isDirectory()) { if (child.replace(/\\/g, "/") !== "lib/contracts") visit(child); } else if (/\.(ts|tsx)$/.test(entry.name)) { const source = fs.readFileSync(child, "utf8"); if (/TenantV1|TenantMembershipV1|AuthorizationContextV1|createAuthorizationContext|parseTenantMembership|parseLegacyOwnership/.test(source)) violations.push(child.replace(/\\/g, "/")); } } };
-  ["app", "components", "lib"].forEach(visit); assert(violations.length === 0, `production tenant-contract imports found: ${violations.join(", ")}`);
+  const records: SourceRecord[] = [];
+  const visit = (relative: string) => { for (const entry of fs.readdirSync(relative, { withFileTypes: true })) { const child = path.join(relative, entry.name); if (entry.isDirectory()) { if (child.replace(/\\/g, "/") !== "lib/contracts") visit(child); } else if (/\.(ts|tsx)$/.test(entry.name)) records.push({ file: child.replace(/\\/g, "/"), source: fs.readFileSync(child, "utf8") }); } };
+  ["app", "components", "lib"].forEach(visit);
+  const actualViolations = tenantImportViolations(records); assert(actualViolations.length === 0, `${TENANT_IMPORT_POLICY_VERSION} unapproved tenant-contract imports: ${actualViolations.join(", ")}`);
+  const approvedRecords = APPROVED_TENANT_CONSUMERS.map(file => ({ file, source: fs.readFileSync(file, "utf8") }));
+  assert(approvedRecords.every(record => staticImports(record.source).some(entry => entry.bindings.some(binding => TENANT_CONTRACT_BINDINGS.has(binding)))), "all approved consumers retain an explicit tenant-authority import");
+  assert(tenantImportViolations(approvedRecords).length === 0, "five versioned authorization cores are approved");
+  const negativeControls = [
+    { file: "components/SyntheticClient.tsx", source: '"use client"; import type { TenantRole } from "../lib/contracts/tenantSystem";' },
+    { file: "app/synthetic/page.tsx", source: 'import type { AuthorizationContextV1 } from "../../lib/contracts/authorization";' },
+    { file: "app/api/unrelated/route.ts", source: 'import { parseTenantMembership } from "../../../lib/contracts/tenantSystem";' },
+    { file: "lib/server/unapprovedTenantConsumer.ts", source: 'import type { TenantV1 } from "../contracts/tenantSystem";' },
+  ];
+  assert(tenantImportViolations(negativeControls).sort().join("|") === negativeControls.map(control => control.file).sort().join("|"), "client, page, unrelated API, and unapproved server controls are rejected");
 }
 
 const tests = [
   ["tenant fixtures validate deterministically", tenantsDeterministic], ["membership fixtures validate deterministically", membershipsDeterministic],
   ["authorization context fails closed", authorizationRules], ["dedicated identifiers and optional references", identifiersAndReferences],
   ["legacy ownership never migrates implicitly", legacyOwnershipRules], ["malformed inputs fail safely", malformedInputsAreSafe],
-  ["no production file imports tenant contracts", noProductionImports],
+  ["only versioned approved production modules import tenant authority contracts", noProductionImports],
 ] as const;
 let passed = 0; const failures: string[] = [];
 for (const [name, test] of tests) { try { test(); passed++; console.log(`PASS: ${name}`); } catch (error: any) { const message = error?.message || String(error); failures.push(`${name}: ${message}`); console.error(`FAIL: ${name}\n  ${message}`); } }
