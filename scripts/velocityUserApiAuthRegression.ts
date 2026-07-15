@@ -5,11 +5,11 @@ import { authenticateUserApiRequest, type UserApiAuthDependencies } from "../lib
 import { defineUserApiRoutePolicy } from "../lib/server/auth/userApiAuthPolicy";
 
 function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
-const approvedMigratedRoutes = ["applications/[id]/route.ts", "applications/[id]/analyze/route.ts"] as const;
+const approvedMigratedRoutes = ["applications/[id]/route.ts", "applications/[id]/analyze/route.ts", "applications/[id]/documents/route.ts", "applications/[id]/documents/[documentId]/route.ts"] as const;
 function migratedUserApiRoutes(routes: ReadonlyMap<string, string>): string[] { return [...routes].filter(([, source]) => /\b(?:requireAuthenticatedUserRequest|authenticateUserApiRequest)\b/.test(source)).map(([route]) => route.replace(/\\/g, "/")); }
 function assertApprovedRouteMigration(routes: ReadonlyMap<string, string>, policySource: string) {
   const migrated = migratedUserApiRoutes(routes);
-  assert(JSON.stringify(migrated) === JSON.stringify(approvedMigratedRoutes), `production route migrated outside approved application read/analyze routes: ${migrated.join(", ") || "none"}`);
+  assert(JSON.stringify(migrated) === JSON.stringify(approvedMigratedRoutes), `production route migrated outside approved application/document routes: ${migrated.join(", ") || "none"}`);
   for (const route of approvedMigratedRoutes) {
     const source = routes.get(route) || "";
     assert(/import\s*\{[^}]*requireAuthenticatedUserRequest[^}]*\}\s*from\s*["'][^"']*lib\/server\/auth\/userApiAuth["']/.test(source), `${route} does not use canonical user API authentication boundary`);

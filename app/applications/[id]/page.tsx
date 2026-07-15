@@ -1,9 +1,8 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { db, storage } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
 import {
-  arrayUnion,
   collection,
   deleteField,
   doc,
@@ -13,7 +12,6 @@ import {
   serverTimestamp,
   updateDoc,
 } from "firebase/firestore";
-import { deleteObject, getDownloadURL, ref, uploadBytesResumable } from "firebase/storage";
 import { useToast } from "@/components/ui/ToastProvider";
 
 type Underwriter = {
@@ -24,6 +22,7 @@ type Underwriter = {
 };
 
 type StoredDoc = {
+  documentId: string;
   name: string;
   url: string;
   path: string;
@@ -2105,6 +2104,7 @@ export default function ApplicationDetailPage() {
   const [manualSeverity, setManualSeverity] = useState<"low" | "med" | "high">("med");
   const [manualEvidence, setManualEvidence] = useState("");
   const [lastScanDiagnostics, setLastScanDiagnostics] = useState<ScanDiagnostics | null>(null);
+  const [canonicalDocuments, setCanonicalDocuments] = useState<StoredDoc[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const appRef = useMemo(() => doc(db, "applications", id), [id]);
@@ -2150,23 +2150,21 @@ export default function ApplicationDetailPage() {
     return () => unsub();
   }, []);
 
-  const storedDocs = useMemo(() => {
-    const raw = (app as any)?.storedDocs;
-    if (!Array.isArray(raw)) return [];
-
-    return raw
-      .filter((item: any) => item && typeof item === "object")
-      .map((item: any) => ({
-        name: (item.name || "Document").toString(),
-        url: (item.url || "").toString(),
-        path: (item.path || "").toString(),
-        uploadedAtMs:
-          typeof item.uploadedAtMs === "number" && Number.isFinite(item.uploadedAtMs)
-            ? item.uploadedAtMs
-            : 0,
-      }))
-      .filter((item: StoredDoc) => item.name && item.path);
-  }, [app]);
+  const refreshCanonicalDocuments = useCallback(async () => {
+    if (!id) return;
+    const response = await fetch(`/api/applications/${id}/documents`, { cache: "no-store" });
+    const body = await response.json().catch(() => null);
+    if (!response.ok || !body?.ok) throw new Error(body?.error?.message || "Documents are unavailable.");
+    setCanonicalDocuments((body.documents || []).map((item: any) => ({
+      documentId: item.documentId,
+      name: `Document ${String(item.documentId).slice(-8)}`,
+      url: `/api/applications/${id}/documents/${item.documentId}`,
+      path: item.documentId,
+      uploadedAtMs: Date.parse(item.uploadedAt || "") || 0,
+    })));
+  }, [id]);
+  useEffect(() => { void refreshCanonicalDocuments().catch(() => setCanonicalDocuments([])); }, [refreshCanonicalDocuments]);
+  const storedDocs = canonicalDocuments;
   const scan = (app?.scan || null) as ScanResult | null;
   const hasScan = !!scan;
 
@@ -2221,38 +2219,13 @@ export default function ApplicationDetailPage() {
     setUploading(true);
     setUploadPct(0);
 
-    const cleanName = sanitizeFilename(file.name);
-    const path = `applications/${id}/${Date.now()}_${cleanName}`;
-    const storageRef = ref(storage, path);
-
     try {
-      const task = uploadBytesResumable(storageRef, file);
-      await new Promise<void>((resolve, reject) => {
-        task.on(
-          "state_changed",
-          (snap) => {
-            const pctVal = snap.totalBytes ? Math.round((snap.bytesTransferred / snap.totalBytes) * 100) : 0;
-            setUploadPct(pctVal);
-          },
-          (err) => reject(err),
-          () => resolve()
-        );
-      });
-
-      const url = await getDownloadURL(storageRef);
-      const docMeta: StoredDoc = {
-        name: cleanName,
-        url,
-        path,
-        uploadedAtMs: Date.now(),
-      };
-
-      await updateDoc(appRef, {
-        storedDocs: arrayUnion(stripUndefinedForFirestore(docMeta) as any),
-        updatedAt: serverTimestamp(),
-      });
-
-      toast({ type: "success", title: "Upload complete", message: cleanName });
+      const form = new FormData(); form.set("file", file);
+      const response = await fetch(`/api/applications/${id}/documents`, {method:"POST",headers:{"idempotency-key":crypto.randomUUID()},body:form});
+      const body = await response.json().catch(() => null);
+      if (!response.ok || !body?.ok) throw new Error(body?.error?.message || "Upload failed.");
+      setUploadPct(100); await refreshCanonicalDocuments();
+      toast({ type: "success", title: "Upload complete" });
       setTab("Docs");
     } catch (e: any) {
       toast({ type: "error", title: "Upload failed", message: e?.message ?? "Unknown error" });
@@ -2264,18 +2237,10 @@ export default function ApplicationDetailPage() {
   }
 
   async function deleteOneDoc(target: StoredDoc) {
-    if (!target?.path) return;
-
+    if (!target?.documentId) return;
     try {
-      await deleteObject(ref(storage, target.path));
-    } catch {}
-
-    try {
-      const next = storedDocs.filter((d) => d.path !== target.path);
-      await updateDoc(appRef, stripUndefinedForFirestore({
-        storedDocs: next as any,
-        updatedAt: serverTimestamp(),
-      }));
+      const response=await fetch(`/api/applications/${id}/documents/${target.documentId}`,{method:"DELETE"});const body=await response.json().catch(()=>null);if(!response.ok||!body?.ok)throw new Error(body?.error?.message||"Delete failed.");
+      await refreshCanonicalDocuments();
       toast({ type: "success", title: "Doc deleted", message: target.name });
     } catch (e: any) {
       toast({ type: "error", title: "Delete failed", message: e?.message ?? "Unknown error" });
@@ -2287,13 +2252,9 @@ export default function ApplicationDetailPage() {
 
     try {
       for (const d of storedDocs) {
-        try {
-          if (d?.path) await deleteObject(ref(storage, d.path));
-        } catch {}
+        const response=await fetch(`/api/applications/${id}/documents/${d.documentId}`,{method:"DELETE"});if(!response.ok)throw new Error("Delete failed.");
       }
-
       await updateDoc(appRef, {
-        storedDocs: [],
         scan: deleteField(),
         borrowerProfile: deleteField(),
         borrowerProfileVerified: deleteField(),
@@ -2304,6 +2265,7 @@ export default function ApplicationDetailPage() {
         conditions: [],
         updatedAt: serverTimestamp(),
       });
+      await refreshCanonicalDocuments();
 
       setLastScanDiagnostics(null);
 
@@ -2346,31 +2308,21 @@ export default function ApplicationDetailPage() {
     setPreviewExpanded(false);
 
     try {
-      const docsForScan = storedDocs.map((d) => ({
-        name: d.name,
-        url: d.url,
-        path: d.path,
-        uploadedAtMs: d.uploadedAtMs,
-      }));
-
       const res = await fetch(`/api/applications/${id}/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          storedDocs: docsForScan,
-        }),
+        body: JSON.stringify({ idempotencyKey: crypto.randomUUID() }),
       });
-
-      const data = (await res.json().catch(() => null)) as AnalyzeResponse | null;
-
-      if (!res.ok || !data?.ok) {
-        const msg = (data as any)?.error || `Analyze failed (${res.status})`;
+      const envelope = (await res.json().catch(() => null)) as any;
+      if (!res.ok || !envelope?.ok) {
+        const msg = envelope?.error?.message || `Analyze failed (${res.status})`;
         throw new Error(msg);
       }
+      const data = (envelope.analysis || {}) as AnalyzeResponse;
 
       const diagnostics: ScanDiagnostics = {
         uploadedCount:
-          typeof data.docsUploaded === "number" ? data.docsUploaded : docsForScan.length,
+          typeof data.docsUploaded === "number" ? data.docsUploaded : storedDocs.length,
         processedCount:
           typeof data.docsProcessedCount === "number"
             ? data.docsProcessedCount
