@@ -1,0 +1,13 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import {REPORT_EXPORT_POLICY} from "../lib/server/reports/reportExportOrchestrator";
+const core=fs.readFileSync("lib/server/reports/reportExportOrchestrator.ts","utf8"),route=fs.readFileSync("app/api/applications/[id]/report/route.ts","utf8"),page=fs.readFileSync("app/applications/[id]/page.tsx","utf8");let n=0;const test=(x:string,f:()=>void)=>{f();console.log(`PASS ${++n}: ${x}`)};
+test("authentication and application authorization precede analysis",()=>{assert(route.includes("requireAuthenticatedUserRequest"));assert(core.indexOf("authorize(input.auth")<core.indexOf("const a=await analysis"))});
+test("request rejects caller analysis and report content",()=>{assert(core.includes('!["idempotencyKey","reportType","outputFormat"].includes(k)'));for(const x of ["analysis","report","borrower","conditions","html","path","bucket"])assert(!page.includes(`${x}: scan.`))});
+test("explicit permissions and provisional policy",()=>{for(const p of ["report.generate","report.read","export.generate"])assert(core.includes(p));assert.equal(REPORT_EXPORT_POLICY.status,"provisional_product_review_required")});
+test("completed persisted analysis only",()=>{assert(core.includes('c.status!=="completed"'));assert(core.includes("evidenceAggregationFingerprint"));assert(core.includes("analysisOutputFingerprint"))});
+test("canonical server-generated artifact identity",()=>{assert(core.includes("randomUUID"));assert(core.includes("/reports/${reserved.reportId}/artifact.pdf"));assert(!route.includes("storagePath"))});
+test("idempotency and concurrency fail closed",()=>{assert(core.includes("already_exists_identical"));assert(core.includes("REPORT_ALREADY_RUNNING"));assert(core.includes("REPORT_STALE"))});
+test("audit precedes generation and read",()=>{assert(core.indexOf("if(!await audit(permission.app.auditPlan")<core.indexOf("const normalized"));assert(core.includes("reportAuditEvents"))});
+test("report builder receives only persisted analysis",()=>{assert(core.includes("buildUnderwritingReport(a.response.analysis"));assert(!core.includes("analyzeApplication"))});
+console.log(`Report export migration deterministic regression: ${n}/${n} passed`);

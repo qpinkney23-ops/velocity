@@ -60,6 +60,8 @@
     "velocity:applications:analyze-route:emulator": "npx tsx scripts/velocityApplicationAnalyzeRouteRunner.ts",
     "velocity:documents:cutover": "npx tsx scripts/velocityDocumentCutoverRegression.ts",
     "velocity:documents:cutover:emulator": "npx tsx scripts/velocityDocumentCutoverRunner.ts",
+    "velocity:reports:secure": "npx tsx scripts/velocityReportExportMigrationRegression.ts",
+    "velocity:reports:secure:emulator": "npx tsx scripts/velocityReportExportRunner.ts",
     "velocity:application-read:emulator:child": "firebase emulators:exec --config firebase.application-read.test.json --project demo-velocity-application-read --only firestore \"npx tsx scripts/velocityApplicationReadRouteEmulatorRegression.ts\"",
     "velocity:application-read:emulator": "npx tsx scripts/velocityApplicationReadEmulatorRunner.ts",
     "velocity:application-read": "npm run velocity:applications:read-route && npm run velocity:application-read:emulator",

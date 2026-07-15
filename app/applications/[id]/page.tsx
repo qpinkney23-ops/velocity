@@ -2541,34 +2541,7 @@ export default function ApplicationDetailPage() {
       const res = await fetch(`/api/applications/${id}/report`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          extracted: scan.extracted || {},
-          ai: scan.ai || null,
-          report: scan.report || null,
-
-          // Enterprise workflow orchestration layer
-          readiness: workflowReadiness,
-          canonicalConditions: canonicalWorkflowConditions,
-
-          workflow: {
-            readiness: workflowReadiness,
-            canonicalConditions: canonicalWorkflowConditions,
-            workflowRisk: workflowReadiness.workflowRisk || "review",
-            readinessLabel: workflowReadiness.readinessLabel || "needs_review",
-            readinessScore:
-              typeof workflowReadiness.readinessScore === "number"
-                ? workflowReadiness.readinessScore
-                : 0,
-            topBlockingReasons:
-              Array.isArray(workflowReadiness.topBlockingReasons)
-                ? workflowReadiness.topBlockingReasons
-                : [],
-            nextBestActions:
-              Array.isArray(workflowReadiness.nextBestActions)
-                ? workflowReadiness.nextBestActions
-                : [],
-          },
-        }),
+        body: JSON.stringify({ idempotencyKey: crypto.randomUUID(), reportType: "underwriting_summary", outputFormat: "pdf" }),
       });
 
       if (!res.ok) {
@@ -2576,7 +2549,11 @@ export default function ApplicationDetailPage() {
         throw new Error(data?.error || `Report export failed (${res.status})`);
       }
 
-      const blob = await res.blob();
+      const receipt = await res.json().catch(() => null);
+      if (!receipt?.ok) throw new Error(receipt?.error?.message || "Report generation failed.");
+      const artifactResponse = await fetch(`/api/applications/${id}/report`, { cache: "no-store" });
+      if (!artifactResponse.ok) throw new Error("Report retrieval failed.");
+      const blob = await artifactResponse.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       const safeName = (scan.extracted?.fullName || scan.extracted?.borrower || "application")
