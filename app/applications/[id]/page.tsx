@@ -2189,7 +2189,16 @@ export default function ApplicationDetailPage() {
 
   async function saveStatus() {
     try {
-      const response=await fetch(`/api/applications/${id}/workflow`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({commandType:"change_workflow_stage",targetStage:statusDraft,expectedVersion:(app as any)?.workflowVersion||(app as any)?.authorizationVersion,idempotencyKey:crypto.randomUUID()})});if(!response.ok)throw new Error((await response.json().catch(()=>null))?.error?.message||"Status update failed.");
+      let response: Response;
+      if (statusDraft === "Approved") {
+        const contextResponse = await fetch(`/api/applications/${id}/decision`, { cache: "no-store" });
+        const context = await contextResponse.json().catch(() => null);
+        if (!contextResponse.ok || !context?.ok) throw new Error(context?.error?.message || "Decision context is not available.");
+        response = await fetch(`/api/applications/${id}/decision`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "approve", justificationCode: "analysis_and_conditions_satisfied", expectedWorkflowVersion: context.expectedWorkflowVersion, expectedDecisionVersion: context.expectedDecisionVersion, expectedAnalysisId: context.expectedAnalysisId, expectedAnalysisVersion: context.expectedAnalysisVersion, expectedAnalysisOutputFingerprint: context.expectedAnalysisOutputFingerprint, expectedEvidenceAggregationFingerprint: context.expectedEvidenceAggregationFingerprint, idempotencyKey: crypto.randomUUID() }) });
+      } else {
+        response = await fetch(`/api/applications/${id}/workflow`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ commandType: "change_workflow_stage", targetStage: statusDraft, expectedVersion: (app as any)?.workflowVersion || (app as any)?.authorizationVersion, idempotencyKey: crypto.randomUUID() }) });
+      }
+      if (!response.ok) throw new Error((await response.json().catch(() => null))?.error?.message || "Status update failed.");
       toast({ type: "success", title: "Status saved", message: `Set to "${statusDraft}"` });
     } catch (e: any) {
       toast({ type: "error", title: "Status save failed", message: e?.message ?? "Unknown error" });

@@ -1,0 +1,1 @@
+{"emulators":{"firestore":{"host":"127.0.0.1","port":8198},"ui":{"enabled":false}},"firestore":{"rules":"tests/tenant-authorization/firestore.test.rules"}}
