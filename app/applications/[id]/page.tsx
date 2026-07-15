@@ -2189,7 +2189,7 @@ export default function ApplicationDetailPage() {
 
   async function saveStatus() {
     try {
-      await updateDoc(appRef, stripUndefinedForFirestore({ status: statusDraft, updatedAt: serverTimestamp() }));
+      const response=await fetch(`/api/applications/${id}/workflow`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({commandType:"change_workflow_stage",targetStage:statusDraft,expectedVersion:(app as any)?.workflowVersion||(app as any)?.authorizationVersion,idempotencyKey:crypto.randomUUID()})});if(!response.ok)throw new Error((await response.json().catch(()=>null))?.error?.message||"Status update failed.");
       toast({ type: "success", title: "Status saved", message: `Set to "${statusDraft}"` });
     } catch (e: any) {
       toast({ type: "error", title: "Status save failed", message: e?.message ?? "Unknown error" });
@@ -2207,7 +2207,7 @@ export default function ApplicationDetailPage() {
 
   async function saveUnderwriter() {
     try {
-      await updateDoc(appRef, stripUndefinedForFirestore({ underwriterId: uwDraft || "", updatedAt: serverTimestamp() }));
+      if(!uwDraft)throw new Error("Choose an underwriter.");const response=await fetch(`/api/applications/${id}/workflow`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({commandType:"assign_underwriter",assigneeId:uwDraft,expectedVersion:(app as any)?.workflowVersion||(app as any)?.authorizationVersion,idempotencyKey:crypto.randomUUID()})});if(!response.ok)throw new Error((await response.json().catch(()=>null))?.error?.message||"Assignment failed.");
       toast({ type: "success", title: "Underwriter assigned" });
     } catch (e: any) {
       toast({ type: "error", title: "Assignment failed", message: e?.message ?? "Unknown error" });
@@ -2281,18 +2281,17 @@ export default function ApplicationDetailPage() {
     }
   }
 
-  async function saveUwConditions(next: UWCondition[]) {
-    const canonical = lockHardStopConditionArray(mergeCanonicalConditions([next])) as UWCondition[];
-    try {
-      await updateDoc(appRef, stripUndefinedForFirestore({
-        uwConditions: canonical as any,
-        conditions: canonical as any,
-        updatedAt: serverTimestamp(),
-      }));
-    } catch (e: any) {
-      console.error("saveUwConditions failed:", e);
-      throw e;
-    }
+  const generatedConditionProjection = (conditions: UWCondition[]) => conditions
+    .filter((condition) => condition.source !== "manual")
+    .map(({ id, label, severity, status, source, evidence }) => ({ id, label, severity, status, source, ...(evidence ? { evidence } : {}) }));
+
+  async function executeGeneratedConditionCommand(commandType: "replace_generated_conditions" | "update_borrower_verification", generated: UWCondition[], extra: Record<string, string> = {}) {
+    const response = await fetch(`/api/applications/${id}/workflow`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ commandType, generatedConditions: generatedConditionProjection(generated), ...extra, expectedVersion: (app as any)?.workflowVersion || (app as any)?.authorizationVersion, idempotencyKey: crypto.randomUUID() }),
+    });
+    if (!response.ok) throw new Error((await response.json().catch(() => null))?.error?.message || "Condition command failed.");
   }
 
   async function runAiScan() {
@@ -2489,20 +2488,8 @@ export default function ApplicationDetailPage() {
     }
 
     try {
-      const existingBySource = splitConditionsBySource(uwConditions);
-      const nextManual = buildManualCondition({
-        label,
-        severity: manualSeverity,
-        evidence,
-      });
-
-      const canonical = mergeCanonicalConditions([
-        existingBySource.ai,
-        existingBySource.borrowerProfile,
-        [...existingBySource.manual, nextManual],
-      ]);
-
-      await saveUwConditions(canonical);
+      const res = await fetch(`/api/applications/${id}/workflow`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({commandType:"create_condition",label,severity:manualSeverity,...(evidence?{note:evidence}:{}),expectedVersion:(app as any)?.workflowVersion||(app as any)?.authorizationVersion,idempotencyKey:crypto.randomUUID()})});
+      if(!res.ok)throw new Error((await res.json().catch(()=>null))?.error?.message||"Condition command failed.");
       setManualLabel("");
       setManualSeverity("med");
       setManualEvidence("");
@@ -2515,14 +2502,8 @@ export default function ApplicationDetailPage() {
 
   async function removeManualCondition(condId: string) {
     try {
-      const existingBySource = splitConditionsBySource(uwConditions);
-      const nextManual = existingBySource.manual.filter((c) => c.id !== condId);
-      const canonical = mergeCanonicalConditions([
-        existingBySource.ai,
-        existingBySource.borrowerProfile,
-        nextManual,
-      ]);
-      await saveUwConditions(canonical);
+      const res = await fetch(`/api/applications/${id}/workflow`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({commandType:"remove_condition",conditionId:condId,expectedVersion:(app as any)?.workflowVersion||(app as any)?.authorizationVersion,idempotencyKey:crypto.randomUUID()})});
+      if(!res.ok)throw new Error((await res.json().catch(()=>null))?.error?.message||"Condition command failed.");
       toast({ type: "success", title: "Manual condition removed" });
     } catch (e: any) {
       toast({ type: "error", title: "Remove condition failed", message: e?.message ?? "Unknown error" });
@@ -2592,7 +2573,7 @@ export default function ApplicationDetailPage() {
         existingBySource.manual,
       ]);
 
-      await saveUwConditions(canonical);
+      await executeGeneratedConditionCommand("replace_generated_conditions", canonical);
 
       toast({
         type: "success",
@@ -2615,11 +2596,6 @@ export default function ApplicationDetailPage() {
   const markVerified = async (field: keyof BorrowerProfileFlat) => {
     try {
       const nextVerified = { ...(verified || {}), [String(field)]: true };
-      await updateDoc(appRef, stripUndefinedForFirestore({
-        borrowerProfileVerified: nextVerified as any,
-        updatedAt: serverTimestamp(),
-      }));
-
       const existingBySource = splitConditionsBySource(uwConditions);
       const nextBorrowerConditions = storedDocs.length
         ? buildConditionsFromBorrowerProfile(borrowerProfile, nextVerified)
@@ -2631,7 +2607,7 @@ export default function ApplicationDetailPage() {
         existingBySource.manual,
       ]);
 
-      await saveUwConditions(canonical);
+      await executeGeneratedConditionCommand("update_borrower_verification", canonical, { field: String(field), action: "verify" });
       toast({ type: "success", title: "Verified", message: `${String(field)} marked verified.` });
     } catch (e: any) {
       toast({ type: "error", title: "Verify failed", message: e?.message ?? "Unknown error" });
@@ -2644,11 +2620,6 @@ export default function ApplicationDetailPage() {
       const nextVerified = { ...(verified || {}) };
       delete nextVerified[String(field)];
 
-      await updateDoc(appRef, stripUndefinedForFirestore({
-        borrowerProfileVerified: nextVerified as any,
-        updatedAt: serverTimestamp(),
-      }));
-
       const existingBySource = splitConditionsBySource(uwConditions);
       const nextBorrowerConditions = storedDocs.length
         ? buildConditionsFromBorrowerProfile(borrowerProfile, nextVerified)
@@ -2660,7 +2631,7 @@ export default function ApplicationDetailPage() {
         existingBySource.manual,
       ]);
 
-      await saveUwConditions(canonical);
+      await executeGeneratedConditionCommand("update_borrower_verification", canonical, { field: String(field), action: "clear" });
       toast({ type: "success", title: "Unverified", message: `${String(field)} cleared.` });
     } catch (e: any) {
       toast({ type: "error", title: "Update failed", message: e?.message ?? "Unknown error" });
@@ -2674,62 +2645,9 @@ export default function ApplicationDetailPage() {
       const target = list.find((c) => c.id === condId);
       if (!target) return;
 
-      const field = verificationFieldFromLabel(target.label);
       const nextStatus: UWCondition["status"] = target.status === "done" ? "open" : "done";
-
-      const nextVerifiedMap = (() => {
-        const map = { ...(verified || {}) };
-        if (field) {
-          if (nextStatus === "done") map[String(field)] = true;
-          else delete map[String(field)];
-        }
-        return map;
-      })();
-
-      if (field) {
-        await updateDoc(appRef, {
-          borrowerProfileVerified: nextVerifiedMap as any,
-          updatedAt: serverTimestamp(),
-        });
-      }
-
-      const next = list.map((c) =>
-        c.id === condId ? { ...c, status: nextStatus, updatedAtMs: Date.now() } : c
-      );
-
-      const nextBySource = splitConditionsBySource(next);
-
-      if (target.source === "borrower_profile") {
-        const regeneratedBorrower = storedDocs.length
-          ? buildConditionsFromBorrowerProfile(borrowerProfile, nextVerifiedMap)
-          : [];
-
-        const canonical = mergeCanonicalConditions([
-          storedDocs.length ? nextBySource.ai : [],
-          regeneratedBorrower,
-          nextBySource.manual,
-        ]);
-
-        await saveUwConditions(canonical);
-
-        if (!field) {
-          toast({
-            type: "info",
-            title: "System condition recalculated",
-            message: "Borrower Profile conditions now clear only when the underlying field is actually satisfied.",
-          });
-        }
-
-        return;
-      }
-
-      const canonical = mergeCanonicalConditions([
-        storedDocs.length ? nextBySource.ai : [],
-        storedDocs.length ? nextBySource.borrowerProfile : [],
-        nextBySource.manual,
-      ]);
-
-      await saveUwConditions(canonical);
+      const res = await fetch(`/api/applications/${id}/workflow`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({commandType:"set_condition_status",conditionId:condId,targetStatus:nextStatus,expectedVersion:(app as any)?.workflowVersion||(app as any)?.authorizationVersion,idempotencyKey:crypto.randomUUID()})});
+      if(!res.ok)throw new Error((await res.json().catch(()=>null))?.error?.message||"Condition command failed.");
     } catch (e: any) {
       toast({ type: "error", title: "Update failed", message: e?.message ?? "Unknown error" });
       console.error("toggleCondition error", e);

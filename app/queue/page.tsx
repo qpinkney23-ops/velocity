@@ -2,13 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import {
-  collection,
-  doc,
-  onSnapshot,
-  serverTimestamp,
-  updateDoc,
-} from "firebase/firestore";
+import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 type AppDoc = {
@@ -220,11 +214,7 @@ export default function WorkQueuePage() {
     setBusy(true);
 
     try {
-      await updateDoc(doc(db, "applications", current.id), {
-        underwriterId: assignmentTarget.id,
-        underwriterName: underwriterLabel(assignmentTarget),
-        updatedAt: serverTimestamp(),
-      });
+      const response=await fetch(`/api/applications/${current.id}/workflow`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({commandType:"assign_underwriter",assigneeId:assignmentTarget.id,expectedVersion:(current as any).workflowVersion||(current as any).authorizationVersion,idempotencyKey:crypto.randomUUID()})});if(!response.ok)throw new Error("Assignment failed.");
 
       setCurrentId((existing) => existing || current.id);
     } finally {
