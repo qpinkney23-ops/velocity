@@ -5,14 +5,16 @@ import { authenticateUserApiRequest, type UserApiAuthDependencies } from "../lib
 import { defineUserApiRoutePolicy } from "../lib/server/auth/userApiAuthPolicy";
 
 function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
-const approvedMigratedRoute = "applications/[id]/route.ts";
+const approvedMigratedRoutes = ["applications/[id]/route.ts", "applications/[id]/analyze/route.ts"] as const;
 function migratedUserApiRoutes(routes: ReadonlyMap<string, string>): string[] { return [...routes].filter(([, source]) => /\b(?:requireAuthenticatedUserRequest|authenticateUserApiRequest)\b/.test(source)).map(([route]) => route.replace(/\\/g, "/")); }
 function assertApprovedRouteMigration(routes: ReadonlyMap<string, string>, policySource: string) {
   const migrated = migratedUserApiRoutes(routes);
-  assert(migrated.length === 1 && migrated[0] === approvedMigratedRoute, `production route migrated outside approved application read route: ${migrated.join(", ") || "none"}`);
-  const source = routes.get(approvedMigratedRoute) || "";
-  assert(/import\s*\{[^}]*requireAuthenticatedUserRequest[^}]*\}\s*from\s*["']\.\.\/\.\.\/\.\.\/\.\.\/lib\/server\/auth\/userApiAuth["']/.test(source), "approved route does not use canonical user API authentication boundary");
-  assert(/requireAuthenticatedUserRequest\s*\([^,]+,\s*APPLICATION_READ_ROUTE_POLICY\s*\)/s.test(source), "approved route does not apply its explicit authentication policy");
+  assert(JSON.stringify(migrated) === JSON.stringify(approvedMigratedRoutes), `production route migrated outside approved application read/analyze routes: ${migrated.join(", ") || "none"}`);
+  for (const route of approvedMigratedRoutes) {
+    const source = routes.get(route) || "";
+    assert(/import\s*\{[^}]*requireAuthenticatedUserRequest[^}]*\}\s*from\s*["'][^"']*lib\/server\/auth\/userApiAuth["']/.test(source), `${route} does not use canonical user API authentication boundary`);
+    assert(/requireAuthenticatedUserRequest\s*\([^,]+,\s*(?:APPLICATION_(?:READ|ANALYZE)_ROUTE_POLICY|policy)\s*\)/s.test(source), `${route} does not apply its explicit authentication policy`);
+  }
   assert(/allowSessionCookie\s*:\s*true/.test(policySource) && /allowFirebaseBearer\s*:\s*false/.test(policySource), "approved route bearer/session policy is not explicit");
 }
 const csrf = "c".repeat(32);
@@ -50,10 +52,10 @@ async function main() {
   for (const file of ["lib/server/auth/userApiAuth.ts", "lib/server/auth/userApiAuthCore.ts", "lib/server/auth/userApiAuthPolicy.ts"]) { const source = fs.readFileSync(file, "utf8"); assert(!/console\.|error\.message|error\.stack/.test(source), `${file} exposes internal errors`); }
   const productionRoutes = [...fs.readdirSync("app/api", { recursive: true })].map(String).filter((entry) => /route\.ts$/.test(entry));
   const routeSources = new Map(productionRoutes.map((entry) => [entry.replace(/\\/g, "/"), fs.readFileSync(path.join("app/api", entry), "utf8")]));
-  const policySource = fs.readFileSync("lib/server/applications/applicationReadRouteCore.ts", "utf8");
+  const policySource = `${fs.readFileSync("lib/server/applications/applicationReadRouteCore.ts", "utf8")}\n${fs.readFileSync("lib/server/applications/applicationAnalyzeRouteCore.ts", "utf8")}`;
   assertApprovedRouteMigration(routeSources, policySource);
-  const syntheticRoutes = new Map(routeSources); syntheticRoutes.set("analyze/route.ts", 'import { requireAuthenticatedUserRequest } from "../../../lib/server/auth/userApiAuth";');
-  let syntheticSecondRejected = false; try { assertApprovedRouteMigration(syntheticRoutes, policySource); } catch { syntheticSecondRejected = true; } assert(syntheticSecondRejected, "synthetic second route migration accepted");
+  const syntheticRoutes = new Map(routeSources); syntheticRoutes.set("unapproved/route.ts", 'import { requireAuthenticatedUserRequest } from "../../../lib/server/auth/userApiAuth";');
+  let syntheticThirdRejected = false; try { assertApprovedRouteMigration(syntheticRoutes, policySource); } catch { syntheticThirdRejected = true; } assert(syntheticThirdRejected, "synthetic third route migration accepted");
   const guard = fs.readFileSync("lib/server/auth/userApiAuth.ts", "utf8"); assert(guard.includes('import "server-only"'), "canonical API guard is not server-only");
   const publicErrors = [oversized, unresolved].map((result) => JSON.stringify(result.error)); assert(publicErrors.every((text) => !/synthetic_api_user|synthetic-token|velocity_session|Firebase|stack/i.test(text)), "public error exposed sensitive data");
   console.log("User API authentication boundary regression: PASS");

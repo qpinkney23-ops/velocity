@@ -6,15 +6,17 @@ import { authorizationAuditFixtures as f } from "../lib/contracts/authorizationA
 import { AUTHORIZATION_VERSION_INVALIDATION_MODEL, authorizationCachePolicy } from "../lib/server/authorization/authorizationCachePolicy";
 
 function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
-const approvedProductionImporter = "app/api/applications/[id]/route.ts";
-const approvedAuditImports = new Set(["../../../../lib/server/authorization/applicationAuthorizationOrchestrator", "../../../../lib/server/authorization/authorizationAuditPersistence"]);
+const approvedProductionImports = new Map([
+  ["app/api/applications/[id]/route.ts", new Set(["../../../../lib/server/authorization/applicationAuthorizationOrchestrator", "../../../../lib/server/authorization/authorizationAuditPersistence"])],
+  ["app/api/applications/[id]/analyze/route.ts", new Set(["@/lib/server/authorization/applicationAuthorizationOrchestrator", "@/lib/server/authorization/authorizationAuditPersistence"])],
+]);
 function importSpecifiers(source: string, file: string): string[] {
   const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, file.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);
   return parsed.statements.flatMap((statement) => ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier) ? [statement.moduleSpecifier.text] : []);
 }
 function auditCacheIsolationViolation(file: string, source: string): boolean {
   const normalized = file.replace(/\\/g, "/");
-  return importSpecifiers(source, normalized).some((specifier) => /(?:^|\/)(?:authorizationAudit(?:Persistence)?|authorizationCachePolicy)$/.test(specifier) && !(normalized === approvedProductionImporter && approvedAuditImports.has(specifier)));
+  return importSpecifiers(source, normalized).some((specifier) => /(?:^|\/)(?:authorizationAudit(?:Persistence)?|authorizationCachePolicy)$/.test(specifier) && !approvedProductionImports.get(normalized)?.has(specifier));
 }
 function main() {
   for (const event of Object.values(f.events)) { const parsed = parseAuthorizationAuditEvent(event); assert(parsed.ok, `valid ${event.classification} event rejected`); }
@@ -33,7 +35,7 @@ function main() {
   for (const event of Object.values(f.events)) assert(!/borrower|email|loanAmount|credit|documentText|income|ssn/i.test(JSON.stringify(event)), "audit fixture contains PII");
   const production = ["app", "components", "middleware.ts"].flatMap((root) => !fs.existsSync(root) ? [] : fs.statSync(root).isFile() ? [root] : [...fs.readdirSync(root, { recursive: true })].map(String).map((entry) => path.join(root, entry)).filter((file) => fs.statSync(file).isFile() && /\.(ts|tsx)$/.test(file)));
   assert(production.every((file) => !auditCacheIsolationViolation(file, fs.readFileSync(file, "utf8"))), "production imports audit/cache slice outside approved application read route");
-  assert(!auditCacheIsolationViolation(approvedProductionImporter, fs.readFileSync(approvedProductionImporter, "utf8")), "approved application read audit import rejected");
+  for (const approvedProductionImporter of approvedProductionImports.keys()) assert(!auditCacheIsolationViolation(approvedProductionImporter, fs.readFileSync(approvedProductionImporter, "utf8")), `approved application route audit import rejected: ${approvedProductionImporter}`);
   assert(auditCacheIsolationViolation("app/api/debug/route.ts", 'import { persistAuthorizationAuditEvent } from "../../../lib/server/authorization/authorizationAuditPersistence";'), "synthetic unauthorized route import accepted");
   assert(auditCacheIsolationViolation("app/example/page.tsx", 'import { createAuthorizationAuditEvent } from "../../lib/contracts/authorizationAudit";'), "synthetic page/client import accepted");
   console.log("Authorization audit and cache policy regression: PASS");

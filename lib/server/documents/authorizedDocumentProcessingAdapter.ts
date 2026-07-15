@@ -4,7 +4,7 @@ import path from "node:path";
 import type { ProcessingDependencies, RawPage } from "./authorizedDocumentProcessing";
 
 const localEnglishData = require("@tesseract.js-data/eng") as { langPath: string };
-const standardFontDataUrl = `${path.join(path.dirname(require.resolve("pdfjs-dist/package.json")), "standard_fonts")}${path.sep}`;
+const standardFontDataUrl = `${path.join(process.cwd(), "node_modules", "pdfjs-dist", "standard_fonts")}${path.sep}`;
 
 type PdfDocument = Awaited<ReturnType<typeof openPdf>>;
 
