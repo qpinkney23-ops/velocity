@@ -5,15 +5,16 @@ import { authenticateUserApiRequest, type UserApiAuthDependencies } from "../lib
 import { defineUserApiRoutePolicy } from "../lib/server/auth/userApiAuthPolicy";
 
 function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
-const approvedMigratedRoutes = ["applications/[id]/route.ts", "applications/[id]/analyze/route.ts", "applications/[id]/decision/route.ts", "applications/[id]/documents/route.ts", "applications/[id]/report/route.ts", "applications/[id]/workflow/route.ts", "applications/[id]/documents/[documentId]/route.ts"] as const;
+const approvedMigratedRoutes = ["applications/[id]/route.ts", "applications/[id]/analyze/route.ts", "applications/[id]/decision/route.ts", "applications/[id]/documents/route.ts", "applications/[id]/report/route.ts", "applications/[id]/workflow/route.ts", "applications/[id]/documents/[documentId]/route.ts", "stripe/checkout/route.ts", "stripe/portal/route.ts"] as const;
 function migratedUserApiRoutes(routes: ReadonlyMap<string, string>): string[] { return [...routes].filter(([, source]) => /\b(?:requireAuthenticatedUserRequest|authenticateUserApiRequest)\b/.test(source)).map(([route]) => route.replace(/\\/g, "/")); }
 function assertApprovedRouteMigration(routes: ReadonlyMap<string, string>, policySource: string) {
   const migrated = migratedUserApiRoutes(routes);
-  assert(JSON.stringify(migrated) === JSON.stringify(approvedMigratedRoutes), `production route migrated outside approved application/document routes: ${migrated.join(", ") || "none"}`);
+  assert(migrated.length === approvedMigratedRoutes.length && approvedMigratedRoutes.every(route => migrated.includes(route)), `production route migrated outside approved application/document/billing routes: ${migrated.join(", ") || "none"}`);
   for (const route of approvedMigratedRoutes) {
     const source = routes.get(route) || "";
     assert(/import\s*\{[^}]*requireAuthenticatedUserRequest[^}]*\}\s*from\s*["'][^"']*lib\/server\/auth\/userApiAuth["']/.test(source), `${route} does not use canonical user API authentication boundary`);
-    assert(/requireAuthenticatedUserRequest\s*\([^,]+,\s*(?:APPLICATION_(?:READ|ANALYZE)_ROUTE_POLICY|policy)\s*\)/s.test(source), `${route} does not apply its explicit authentication policy`);
+    if (route.startsWith("stripe/")) assert(/authenticate:\s*requireAuthenticatedUserRequest/.test(source), `${route} does not inject the canonical authentication boundary`);
+    else assert(/requireAuthenticatedUserRequest\s*\([^,]+,\s*(?:APPLICATION_(?:READ|ANALYZE)_ROUTE_POLICY|policy)\s*\)/s.test(source), `${route} does not apply its explicit authentication policy`);
   }
   assert(/allowSessionCookie\s*:\s*true/.test(policySource) && /allowFirebaseBearer\s*:\s*false/.test(policySource), "approved route bearer/session policy is not explicit");
 }

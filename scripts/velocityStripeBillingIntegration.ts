@@ -1,0 +1,19 @@
+import { executeStripeCheckoutRoute, executeStripePortalRoute } from "../lib/server/billing/stripeBillingRouteCore";
+import { auth, context, harness } from "../tests/stripe-billing/billingTestFixtures";
+let passed = 0; const assert = (v: unknown, m: string) => { if (!v) throw new Error(m); passed++; };
+function routeHarness(options: any = {}) { const h = harness(options); const a = auth(); return { h, d: { ...h.dependencies, appOrigin: "https://velocity.test", authenticate: async () => options.unauthenticated ? { ok: false as const } : { ok: true as const, context: a }, resolveTenant: async () => options.missingTenant ? { ok: false as const, code: "TENANT_SELECTION_REQUIRED" } : { ok: true as const, context: context(a, options.tenantId || "tenant_alpha", options.role || "owner") } } }; }
+async function main() {
+  delete process.env.STRIPE_SECRET_KEY;
+  const unauth = routeHarness({ unauthenticated: true }); const u = await executeStripeCheckoutRoute(new Request("https://velocity.test/api/stripe/checkout", { method: "POST" }), { idempotencyKey: "integration_unauth_001" }, unauth.d); assert(!u.ok && u.error.code === "AUTH_REQUIRED" && unauth.h.counts().checkoutCalls === 0, "unauthenticated route invoked provider");
+  const checkout = routeHarness(); const request = new Request("https://velocity.test/api/stripe/checkout", { method: "POST" }); const c = await executeStripeCheckoutRoute(request, { idempotencyKey: "integration_checkout_001" }, checkout.d); assert(c.ok && checkout.h.counts().checkoutCalls === 1, "checkout route integration failed"); assert(checkout.h.events[0] === "audit:authorization", "route did not audit before provider");
+  const portal = routeHarness(); const p = await executeStripePortalRoute(new Request("https://velocity.test/api/stripe/portal", { method: "POST" }), { idempotencyKey: "integration_portal_001" }, portal.d); assert(p.ok && portal.h.counts().portalCalls === 1, "portal route integration failed");
+  const unknown = routeHarness(); const bad = await executeStripeCheckoutRoute(request, { idempotencyKey: "integration_unknown_001", tenantId: "tenant_beta" }, unknown.d); assert(!bad.ok && unknown.h.counts().checkoutCalls === 0, "unknown authority field accepted");
+  const retry = routeHarness(); const r1 = await executeStripeCheckoutRoute(request, { idempotencyKey: "integration_retry_001" }, retry.d), r2 = await executeStripeCheckoutRoute(request, { idempotencyKey: "integration_retry_001" }, retry.d); assert(r1.ok && r2.ok && retry.h.counts().checkoutCalls === 1, "route retry duplicated provider");
+  const providerFail = routeHarness({ providerFailure: true }); const pf = await executeStripeCheckoutRoute(request, { idempotencyKey: "integration_provider_001" }, providerFail.d); assert(!pf.ok && pf.error.code === "BILLING_PROVIDER_FAILED" && !JSON.stringify(pf).includes("raw provider"), "unsafe provider failure");
+  const auditFail = routeHarness({ authorizationAuditFailure: true }); const af = await executeStripeCheckoutRoute(request, { idempotencyKey: "integration_audit_001" }, auditFail.d); assert(!af.ok && af.error.code === "AUDIT_REQUIRED" && auditFail.h.counts().checkoutCalls === 0, "audit failure invoked provider");
+  const cross = routeHarness({ mappingTenant: "cross" }); const x = await executeStripeCheckoutRoute(request, { idempotencyKey: "integration_cross_001" }, cross.d); assert(!x.ok && cross.h.counts().checkoutCalls === 0, "cross tenant mapping invoked provider");
+  assert(c.ok && !JSON.stringify(c).includes("providerReference") && Object.keys(c).length === 5, "raw Stripe object leaked");
+  console.log(`Stripe billing non-network integration: ${passed}/${passed} passed; production network calls: 0; real charges: 0`);
+  console.log("Optional live Stripe test: skipped (no optional live test is registered)");
+}
+main().catch(e => { console.error(e); process.exit(1); });
