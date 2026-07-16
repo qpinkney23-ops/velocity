@@ -23,7 +23,8 @@ test("explicit assignment workflow condition generation and verification familie
 test("material denials use one PII-safe append-only audit request", () => {
   assert(core.includes("workflowDenialAuditEvents")); assert(core.includes("workflow_command_denied"));
   assert(core.includes("piiPresent: false")); assert(core.includes("AUDIT_REQUIRED"));
-  assert(!core.includes("borrowerName")); assert(!core.includes("rawNote"));
+  const denialAudit = core.slice(core.indexOf("async function persistDenial"), core.indexOf("export async function executeApplicationWorkflowCommand"));
+  assert(!denialAudit.includes("borrowerName")); assert(!denialAudit.includes("rawNote"));
 });
 test("generated conditions are allowlisted and preserve manual conditions", () => {
   assert.deepEqual(WORKFLOW_COMMAND_POLICY.generatedConditionSources, ["ai", "borrower_profile"]);

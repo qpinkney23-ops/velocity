@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
-import { getFirestore } from "firebase-admin/firestore";
+import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import type { ServerAuthContextV1 } from "../../contracts/serverAuth";
 import { defaultAdminApp } from "../auth/firebaseAdminAuthAdapter";
 import { APPLICATION_ACTION_POLICIES } from "../authorization/applicationActionPolicies";
@@ -15,6 +15,7 @@ export const WORKFLOW_COMMAND_POLICY = Object.freeze({
   conditionSeverities: Object.freeze(["low", "med", "high"]),
   generatedConditionSources: Object.freeze(["ai", "borrower_profile"]),
   verificationFields: Object.freeze(["fullName", "email", "dob", "ssnLast4", "loanNumber", "income", "creditScore", "address", "employerAddress", "loanAmount", "propertyValue", "debts", "dti", "ltv"]),
+  maximumNotesLength: 4000,
 });
 
 type Failure = Readonly<{ ok: false; status: number; error: Readonly<{ code: string; message: string }>; requestId: string; correlationId: string }>;
@@ -31,7 +32,7 @@ function parseCommand(body: unknown): Record<string, any> | undefined {
   const fields: Record<string, readonly string[]> = {
     assign_underwriter: ["assigneeId"], change_workflow_stage: ["targetStage"], create_condition: ["label", "severity", "note"],
     set_condition_status: ["conditionId", "targetStatus"], remove_condition: ["conditionId"], replace_generated_conditions: ["generatedConditions"],
-    update_borrower_verification: ["field", "action", "generatedConditions"],
+    update_borrower_verification: ["field", "action", "generatedConditions"], update_notes: ["notes"], reset_after_documents_deleted: [],
   };
   const allowed = fields[raw.commandType];
   if (!allowed || Object.keys(raw).some(key => AUTHORITY_FIELDS.has(key) || ![...common, ...allowed].includes(key))) return;
@@ -54,7 +55,7 @@ function validateGeneratedConditions(value: unknown) {
   return result;
 }
 
-const permissionFor = (type: string) => type === "assign_underwriter" ? "assignment.manage" : type === "change_workflow_stage" ? "queue.manage" : type === "update_borrower_verification" ? "evidence.review" : "condition.manage";
+const permissionFor = (type: string) => type === "assign_underwriter" ? "assignment.manage" : type === "change_workflow_stage" ? "queue.manage" : type === "update_borrower_verification" ? "evidence.review" : type === "update_notes" || type === "reset_after_documents_deleted" ? "application.update" : "condition.manage";
 
 async function persistDenial(input: CommandInput, tenantId: string, reasonCode: string, commandType: string, permission: string, targetId?: string): Promise<Failure> {
   if (input.injectDenialAuditFailure) return fail("AUDIT_REQUIRED", 500, input.auth);
@@ -93,7 +94,15 @@ export async function executeApplicationWorkflowCommand(input: CommandInput) {
       const update: any = { workflowVersion: nextVersion, updatedAt: new Date() };
       let targetId: string | undefined;
 
-      if (body.commandType === "assign_underwriter") {
+      if (body.commandType === "update_notes") {
+        if (typeof body.notes !== "string" || body.notes.length > WORKFLOW_COMMAND_POLICY.maximumNotesLength) return { kind: "deny", code: "NOTE_INVALID" };
+        update.notes = body.notes.replace(/\r\n/g, "\n").trim(); update.notesUpdatedBy = authorized.context.authentication.principalId;
+      } else if (body.commandType === "reset_after_documents_deleted") {
+        const documents = await tx.get(db().collection("applicationDocuments").where("applicationId", "==", input.applicationId).limit(1));
+        if (!documents.empty) return { kind: "deny", code: "RESET_NOT_ALLOWED" };
+        for (const field of ["scan", "borrowerProfile", "borrowerProfileVerified", "borrowerName", "email", "loanAmount", "loanNumber"]) update[field] = FieldValue.delete();
+        update.uwConditions = []; update.conditions = [];
+      } else if (body.commandType === "assign_underwriter") {
         if (!SAFE_ID.test(body.assigneeId || "")) return { kind: "deny", code: "ASSIGNEE_NOT_AVAILABLE" };
         const member = await tx.get(db().doc(`tenants/${authorized.context.tenantId}/members/${body.assigneeId}`));
         if (!member.exists || member.data()?.membershipStatus !== "active" || member.data()?.role !== "underwriter") return { kind: "deny", code: "ASSIGNEE_NOT_AVAILABLE", targetId: body.assigneeId };

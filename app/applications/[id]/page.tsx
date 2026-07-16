@@ -4,13 +4,10 @@ import { useParams } from "next/navigation";
 import { db } from "@/lib/firebase";
 import {
   collection,
-  deleteField,
   doc,
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp,
-  updateDoc,
 } from "firebase/firestore";
 import { useToast } from "@/components/ui/ToastProvider";
 
@@ -2207,7 +2204,7 @@ export default function ApplicationDetailPage() {
 
   async function saveNotes() {
     try {
-      await updateDoc(appRef, stripUndefinedForFirestore({ notes: notesDraft, updatedAt: serverTimestamp() }));
+      const response=await fetch(`/api/applications/${id}/workflow`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({commandType:"update_notes",notes:notesDraft,expectedVersion:(app as any)?.workflowVersion||(app as any)?.authorizationVersion,idempotencyKey:crypto.randomUUID()})});if(!response.ok)throw new Error((await response.json().catch(()=>null))?.error?.message||"Notes update failed.");
       toast({ type: "success", title: "Notes saved" });
     } catch (e: any) {
       toast({ type: "error", title: "Notes save failed", message: e?.message ?? "Unknown error" });
@@ -2263,17 +2260,7 @@ export default function ApplicationDetailPage() {
       for (const d of storedDocs) {
         const response=await fetch(`/api/applications/${id}/documents/${d.documentId}`,{method:"DELETE"});if(!response.ok)throw new Error("Delete failed.");
       }
-      await updateDoc(appRef, {
-        scan: deleteField(),
-        borrowerProfile: deleteField(),
-        borrowerProfileVerified: deleteField(),
-        borrowerName: deleteField(),
-        email: deleteField(),
-        loanAmount: deleteField(),
-        uwConditions: [],
-        conditions: [],
-        updatedAt: serverTimestamp(),
-      });
+      const reset=await fetch(`/api/applications/${id}/workflow`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({commandType:"reset_after_documents_deleted",expectedVersion:(app as any)?.workflowVersion||(app as any)?.authorizationVersion,idempotencyKey:crypto.randomUUID()})});if(!reset.ok)throw new Error((await reset.json().catch(()=>null))?.error?.message||"Reset failed.");
       await refreshCanonicalDocuments();
 
       setLastScanDiagnostics(null);
@@ -2454,18 +2441,6 @@ export default function ApplicationDetailPage() {
           data?.analysis?.readiness ||
           null,
       };
-
-      await updateDoc(appRef, stripUndefinedForFirestore({
-        scan: scanToSave as any,
-        borrowerProfile: nextBorrowerProfileFS as any,
-        borrowerName: canonical.fullName || canonical.borrower || "",
-        email: canonical.email || "",
-        loanNumber: canonical.loanNumber || "",
-        loanAmount: canonical.loanAmount ?? null,
-        uwConditions: canonicalConditions as any,
-        conditions: canonicalConditions as any,
-        updatedAt: serverTimestamp(),
-      }));
 
       toast({
         type: "success",
