@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { db } from "@/lib/firebase";
-import { collection, limit, onSnapshot, orderBy, query } from "firebase/firestore";
+import { fetchApplicationPages } from "@/lib/applicationReadClient";
 
 type AppDoc = {
   id: string;
@@ -318,18 +317,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const q = query(collection(db, "applications"), orderBy("updatedAt", "desc"), limit(80));
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const list: AppDoc[] = [];
-        snap.forEach((d) => list.push({ id: d.id, ...(d.data() as any) }));
-        setApps(list);
-        setLoading(false);
-      },
-      () => setLoading(false)
-    );
-    return () => unsub();
+    let active=true;const load=()=>fetchApplicationPages(80).then(({applications})=>{if(active)setApps(applications.slice(0,80))}).finally(()=>{if(active)setLoading(false)});void load();const timer=setInterval(load,15000);return()=>{active=false;clearInterval(timer)};
   }, []);
 
   const kpis = useMemo(() => {

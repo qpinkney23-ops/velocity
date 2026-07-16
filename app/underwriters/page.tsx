@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 import {
   collection,
   addDoc,
-  onSnapshot,
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { fetchApplicationPages } from "@/lib/applicationReadClient";
 
 export default function UnderwritersPage() {
   const [underwriters, setUnderwriters] = useState<any[]>([]);
@@ -15,15 +15,7 @@ export default function UnderwritersPage() {
   const [email, setEmail] = useState("");
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "underwriters"), (snap) => {
-      const rows = snap.docs.map((d) => ({
-        id: d.id,
-        ...d.data(),
-      }));
-      setUnderwriters(rows);
-    });
-
-    return () => unsub();
+    let active=true;const load=()=>fetchApplicationPages(1).then(({assignees})=>{if(active)setUnderwriters(assignees)});void load();const timer=setInterval(load,15000);return()=>{active=false;clearInterval(timer)};
   }, []);
 
   async function addUnderwriter() {

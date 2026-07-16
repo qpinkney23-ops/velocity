@@ -2,8 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { collection, onSnapshot } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { fetchApplicationPages } from "@/lib/applicationReadClient";
 
 type AppDoc = {
   id: string;
@@ -95,24 +94,7 @@ export default function WorkQueuePage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, "applications"), (snap) => {
-      const rows = snap.docs
-        .map((d) => ({ id: d.id, ...(d.data() as any) }))
-        .sort((a, b) => score(b) - score(a));
-
-      setApps(rows);
-    });
-
-    return () => unsub();
-  }, []);
-
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, "underwriters"), (snap) => {
-      const rows = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-      setUnderwriters(rows.filter((u) => u.active !== false));
-    });
-
-    return () => unsub();
+    let active=true;const load=()=>fetchApplicationPages().then(({applications,assignees})=>{if(active){setApps(applications.sort((a,b)=>score(b)-score(a)));setUnderwriters(assignees.filter((u:any)=>u.active!==false))}});void load();const timer=setInterval(load,10000);return()=>{active=false;clearInterval(timer)};
   }, []);
 
   const queueApps = useMemo(() => {

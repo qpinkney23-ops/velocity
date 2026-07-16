@@ -2,8 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { fetchApplicationPages } from "@/lib/applicationReadClient";
 import { useToast } from "@/components/ui/ToastProvider";
 import {
   createDegradedApplicationsPageRow,
@@ -116,39 +115,9 @@ export default function ApplicationsPage() {
   const [tab, setTab] = useState<"All" | "New" | "UW Review" | "Conditions" | "Approved" | "Denied">("All");
   const [search, setSearch] = useState("");
 
-  // Applications live
   useEffect(() => {
-    const q = query(collection(db, "applications"), orderBy("updatedAt", "desc"));
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const rows: AppRow[] = [];
-        snap.forEach((d) => rows.push({ id: d.id, ...(d.data() as any) }));
-        setApps(rows);
-        setLoading(false);
-      },
-      (err) => {
-        setLoading(false);
-        toast({ type: "error", title: "Failed to load applications", message: err?.message || "Unknown error" });
-      }
-    );
-    return () => unsub();
+    let active=true;const load=()=>fetchApplicationPages().then(({applications,assignees})=>{if(active){setApps(applications);setUnderwriters(assignees)}}).catch((err)=>toast({type:"error",title:"Failed to load applications",message:err?.message||"Unknown error"})).finally(()=>{if(active)setLoading(false)});void load();const timer=setInterval(load,10000);return()=>{active=false;clearInterval(timer)};
   }, [toast]);
-
-  // Underwriters live
-  useEffect(() => {
-    const q = query(collection(db, "underwriters"), orderBy("createdAt", "desc"));
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const rows: Underwriter[] = [];
-        snap.forEach((d) => rows.push({ id: d.id, ...(d.data() as any) }));
-        setUnderwriters(rows);
-      },
-      () => {}
-    );
-    return () => unsub();
-  }, []);
 
   // One read-only compatibility adapter now supplies the page display model.
   const normalized = useMemo(() => {

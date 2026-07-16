@@ -16,8 +16,8 @@ test("obsolete global scan-derived repair is removed", () => {
 test("admin page has no application mutation primitive or global mutation loop", () => {
   for (const marker of ["updateDoc", "serverTimestamp", 'doc(db, "applications"']) assert(!admin.includes(marker));
 });
-test("unrelated admin reads, underwriter display, and billing controls remain", () => {
-  for (const marker of ['collection(db, "applications")', 'collection(db, "underwriters")', "/api/stripe/checkout", "/api/stripe/portal"])
+test("admin projections, underwriter display, and billing controls remain", () => {
+  for (const marker of ["fetchApplicationPages", "setUnderwriters", "/api/stripe/checkout", "/api/stripe/portal"])
     assert(admin.includes(marker));
 });
 test("retirement does not create a generic or privileged backfill API", () => {
@@ -26,7 +26,7 @@ test("retirement does not create a generic or privileged backfill API", () => {
 });
 test("production application update rule is server-authoritative", () => {
   const applicationRule = rules.slice(rules.indexOf("match /applications/{id}"), rules.indexOf("// Default deny"));
-  assert(applicationRule.includes("allow read: if isSignedIn()"));
+  assert(applicationRule.includes("allow read: if false"));
   assert(applicationRule.includes("allow create: if false"));
   assert(applicationRule.includes("allow update: if false"));
   assert(applicationRule.includes("allow delete: if isAdmin()"));

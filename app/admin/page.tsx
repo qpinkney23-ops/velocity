@@ -1,14 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  collection,
-  limit,
-  onSnapshot,
-  orderBy,
-  query,
-} from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { fetchApplicationPages } from "@/lib/applicationReadClient";
 import { useToast } from "@/components/ui/ToastProvider";
 
 type Underwriter = {
@@ -70,33 +63,7 @@ export default function AdminPage() {
   const [checkoutBusy, setCheckoutBusy] = useState(false);
 
   useEffect(() => {
-    const q = query(collection(db, "underwriters"), orderBy("createdAt", "desc"));
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const list: Underwriter[] = [];
-        snap.forEach((d) => list.push({ id: d.id, ...(d.data() as any) }));
-        setUnderwriters(list);
-      },
-      () => {}
-    );
-
-    return () => unsub();
-  }, []);
-
-  useEffect(() => {
-    const q = query(collection(db, "applications"), orderBy("updatedAt", "desc"), limit(200));
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const list: AppRow[] = [];
-        snap.forEach((d) => list.push({ id: d.id, ...(d.data() as any) }));
-        setApps(list);
-      },
-      () => {}
-    );
-
-    return () => unsub();
+    let active=true;const load=()=>fetchApplicationPages(100).then(({applications,assignees})=>{if(active){setApps(applications.slice(0,200));setUnderwriters(assignees)}});void load();const timer=setInterval(load,15000);return()=>{active=false;clearInterval(timer)};
   }, []);
 
   const stats = useMemo(() => {

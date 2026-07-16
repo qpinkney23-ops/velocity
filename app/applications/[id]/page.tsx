@@ -1,14 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { db } from "@/lib/firebase";
-import {
-  collection,
-  doc,
-  onSnapshot,
-  orderBy,
-  query,
-} from "firebase/firestore";
+import { fetchApplicationDetail } from "@/lib/applicationReadClient";
 import { useToast } from "@/components/ui/ToastProvider";
 
 type Underwriter = {
@@ -2104,15 +2097,11 @@ export default function ApplicationDetailPage() {
   const [canonicalDocuments, setCanonicalDocuments] = useState<StoredDoc[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const appRef = useMemo(() => doc(db, "applications", id), [id]);
-
   useEffect(() => {
     if (!id) return;
-    const unsub = onSnapshot(
-      appRef,
-      (snap) => {
-        const data = (snap.data() as any) || null;
+    let active=true;const load=()=>fetchApplicationDetail(id).then(({application:data,assignees})=>{if(active){
         setApp(data);
+        setUnderwriters(assignees);
         setLoading(false);
         if (data) {
           setStatusDraft((data.status || "New").toString());
@@ -2124,28 +2113,11 @@ export default function ApplicationDetailPage() {
             setLastScanDiagnostics(persistedDiagnostics);
           }
         }
-      },
-      (err) => {
-        console.error("onSnapshot error", err);
+      }}).catch((err) => {
+        console.error("application projection error", err);
         setLoading(false);
-      }
-    );
-    return () => unsub();
-  }, [appRef, id]);
-
-  useEffect(() => {
-    const qy = query(collection(db, "underwriters"), orderBy("createdAt", "desc"));
-    const unsub = onSnapshot(
-      qy,
-      (snap) => {
-        const list: Underwriter[] = [];
-        snap.forEach((d) => list.push({ id: d.id, ...(d.data() as any) }));
-        setUnderwriters(list);
-      },
-      () => {}
-    );
-    return () => unsub();
-  }, []);
+      });void load();const timer=setInterval(load,5000);return()=>{active=false;clearInterval(timer)};
+  }, [id]);
 
   const refreshCanonicalDocuments = useCallback(async () => {
     if (!id) return;

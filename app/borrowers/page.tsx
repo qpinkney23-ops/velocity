@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { fetchApplicationPages } from "@/lib/applicationReadClient";
 
 type AppRow = {
   id: string;
@@ -63,19 +62,7 @@ export default function BorrowersPage() {
   const [qText, setQText] = useState("");
 
   useEffect(() => {
-    const q = query(collection(db, "applications"), orderBy("updatedAt", "desc"));
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const rows: AppRow[] = [];
-        snap.forEach((d) => rows.push({ id: d.id, ...(d.data() as any) }));
-        setApps(rows);
-        setLoading(false);
-      },
-      () => setLoading(false)
-    );
-
-    return () => unsub();
+    let active=true;const load=()=>fetchApplicationPages().then(({applications})=>{if(active)setApps(applications)}).finally(()=>{if(active)setLoading(false)});void load();const timer=setInterval(load,15000);return()=>{active=false;clearInterval(timer)};
   }, []);
 
   const borrowers = useMemo(() => {

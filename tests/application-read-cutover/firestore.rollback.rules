@@ -1,0 +1,12 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /applications/{id} {
+      // Rollback-only artifact: restores the immediately preceding read policy.
+      allow read: if request.auth != null;
+      allow create, update: if false;
+      allow delete: if false;
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

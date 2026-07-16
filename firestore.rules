@@ -37,10 +37,10 @@ service cloud.firestore {
     }
 
     // Applications collection
-    // - Signed-in users retain reads while application mutations are server-authoritative
+    // - All production application access is server-authoritative
     // - Only admin can delete
     match /applications/{id} {
-      allow read: if isSignedIn();
+      allow read: if false; // SEC-002: browser reads use authenticated server projections.
       allow create: if false; // SEC-002: application creation is server-authoritative.
       allow update: if false; // SEC-002: application updates are server-authoritative.
       allow delete: if isAdmin();

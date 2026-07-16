@@ -83,6 +83,8 @@
     "velocity:application-business-state:emulator": "npm run velocity:workflow:commands:emulator",
     "velocity:admin-backfill-cutover": "npx tsx scripts/velocityAdminBackfillCutoverRegression.ts",
     "velocity:admin-backfill-cutover:emulator": "npx tsx scripts/velocityAdminBackfillCutoverRunner.ts",
+    "velocity:application-read-cutover": "npx tsx scripts/velocityApplicationReadCutoverRegression.ts",
+    "velocity:application-read-cutover:emulator": "npx tsx scripts/velocityApplicationReadCutoverRunner.ts",
     "velocity:regressions": "npx tsx scripts/velocityRegressionSuite.ts",
     "velocity:check": "npm run build && npm run velocity:regressions"
   },
