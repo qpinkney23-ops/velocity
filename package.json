@@ -77,6 +77,8 @@
     "velocity:worker-service-auth:emulator": "npx tsx scripts/velocityWorkerServiceAuthRunner.ts",
     "velocity:scheduler-service-auth": "npx tsx scripts/velocitySchedulerServiceAuthRegression.ts",
     "velocity:scheduler-service-auth:emulator": "npx tsx scripts/velocitySchedulerServiceAuthRunner.ts",
+    "velocity:application-create-cutover": "npx tsx scripts/velocityApplicationCreateCutoverRegression.ts",
+    "velocity:application-create-cutover:emulator": "npx tsx scripts/velocityApplicationCreateCutoverRunner.ts",
     "velocity:regressions": "npx tsx scripts/velocityRegressionSuite.ts",
     "velocity:check": "npm run build && npm run velocity:regressions"
   },

@@ -41,7 +41,7 @@ service cloud.firestore {
     // - Only admin can delete
     match /applications/{id} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn();
+      allow create: if false; // SEC-002: application creation is server-authoritative.
       allow update: if isSignedIn();
       allow delete: if isAdmin();
     }

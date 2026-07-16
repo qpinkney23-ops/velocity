@@ -1,9 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { db } from "@/lib/firebase";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 
 function moneyToNumber(input: string) {
   const cleaned = (input || "").replace(/[^0-9.]/g, "");
@@ -21,6 +19,7 @@ export default function NewApplicationPage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState("");
+  const idempotencyKey = useRef(`application_create_${crypto.randomUUID().replace(/-/g, "")}`);
 
   const loanAmount = useMemo(() => moneyToNumber(loanAmountText), [loanAmountText]);
 
@@ -42,19 +41,16 @@ export default function NewApplicationPage() {
     setMsg("");
 
     try {
-      const docRef = await addDoc(collection(db, "applications"), {
-        borrowerName: borrowerName.trim(),
-        email: email.trim().toLowerCase(),
-        loanAmount,
-        status: "New",
-        underwriterId: "",
-        notes: "",
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+      const response = await fetch("/api/applications", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ borrowerName: borrowerName.trim(), email: email.trim().toLowerCase(), loanAmount, idempotencyKey: idempotencyKey.current }),
       });
+      const receipt = await response.json().catch(() => undefined);
+      if (!response.ok || !receipt?.ok || typeof receipt.applicationId !== "string") throw new Error("APPLICATION_CREATE_FAILED");
 
       setMsg("✅ Application created");
-      router.push(`/applications/${docRef.id}`);
+      router.push(`/applications/${receipt.applicationId}`);
     } catch (e: any) {
       setMsg(`❌ Create failed: ${e?.message ?? "Unknown error"}`);
       setSubmitting(false);
