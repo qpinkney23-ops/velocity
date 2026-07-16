@@ -210,3 +210,23 @@ Executed on 2026-07-15:
 ## 11. Capability registry decision
 
 Keep `CAPABILITY_REGISTRY.md` unchanged. SEC-002 lacks its stated acceptance evidence that unauthorized operations fail through **every** access path and that the permitted matrix succeeds across API, UI, Storage, Firestore, workers, reports, exports and billing. Updating status would contradict both the registry and the architecture.
+
+## 12. 2026-07-16 closeout refresh
+
+This section supersedes the stale implementation-status statements above while preserving the original audit history. Subsequent accepted slices have migrated application create/read/update/delete posture, analyze, documents and production Storage, reports/exports, workflow, decisions, Stripe, workers, schedulers, and evidence review behind authenticated and authorized server boundaries. Production browser access to application records and mortgage Storage objects remains denied. The registered deterministic and real-emulator matrices were rerun for this refresh and passed, including the platform legacy inventory capability described below.
+
+### Platform legacy inventory decision
+
+The bounded dry-run implementation is accepted as code and emulator evidence. It uses a named `legacy_inventory_service`, signed requests, replay protection, an authoritative exact-scope grant, immutable command/receipt/audit persistence, class-bound opaque cursors, bounded class-filtered discovery, safely attributable denial audits, and no ownership or Storage mutation. Its fixed classes are `applications`, `application_documents`, `legacy_application_metadata`, `analysis`, `reports`, `workflow`, `decisions`, `evidence`, `legacy_storage_metadata`, and `canonical_storage_metadata`. Excluded classes have zero class dependency calls in the instrumented emulator proof.
+
+The full operational capability is **not** accepted or complete. No production credential or grant was provisioned, no production inventory was run, no ownership adjudication was authorized, and no Storage object was moved. The provisioning/rotation model and readiness projection are contracts only. A production operation requires a separately approved runbook, real secret-manager/environment provisioning, accountable operator authorization, rollback/incident criteria, and evidence review of the resulting PII-free receipt.
+
+### Remaining SEC-002 bundles
+
+1. **SEC-002-GOVERNANCE-ADMIN-AUDIT-CLOSEOUT-BUNDLE-01** — finalize the permission matrix and active-tenant selection/governance; replace or retire legacy user, membership, and underwriter administration; add authorized audit read/export. This is first because the remaining operator and administrative powers cannot safely depend on provisional role or tenant semantics.
+2. **SEC-002-AUTHORIZATION-OPERATIONS-CLOSEOUT-BUNDLE-01** — deploy the authorization cache only after defining invalidation, revocation, high-risk bypass, version counters, telemetry, and drills; close diagnostic pages/routes and review every remaining direct Admin SDK bypass against the canonical authorization/audit pattern.
+3. **SEC-002-SERVICE-PRINCIPAL-AND-LEGACY-OPERATIONS-CLOSEOUT-BUNDLE-01** — approve and execute service-principal provisioning/rotation, a controlled production dry-run inventory, receipt review, and the separate adjudication/migration/rollback design. Inventory execution must remain distinct from adjudication authority and Storage movement.
+
+### Refreshed completion decision
+
+SEC-002 remains incomplete. The capability registry remains unchanged. The exact next task is **SEC-002-GOVERNANCE-ADMIN-AUDIT-CLOSEOUT-BUNDLE-01**. SEC-003 must not begin until these SEC-002 bundles and the constitution's cross-path acceptance criteria are genuinely complete.

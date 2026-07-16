@@ -91,6 +91,8 @@
     "velocity:production-storage-cutover:emulator": "npx tsx scripts/velocityProductionStorageCutoverRunner.ts",
     "velocity:legacy-ownership": "set NODE_PATH=tests/shims&& npx tsx scripts/velocityLegacyOwnershipRegression.ts",
     "velocity:legacy-ownership:emulator": "set NODE_PATH=tests/shims&& npx tsx scripts/velocityLegacyOwnershipRunner.ts",
+    "velocity:platform-legacy-inventory": "set NODE_PATH=tests/shims&& npx tsx scripts/velocityPlatformLegacyInventoryRegression.ts",
+    "velocity:platform-legacy-inventory:emulator": "set NODE_PATH=tests/shims&& npx tsx scripts/velocityPlatformLegacyInventoryRunner.ts",
     "velocity:regressions": "npx tsx scripts/velocityRegressionSuite.ts",
     "velocity:check": "npm run build && npm run velocity:regressions"
   },
