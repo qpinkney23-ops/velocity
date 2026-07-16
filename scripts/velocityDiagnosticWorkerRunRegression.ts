@@ -1,0 +1,14 @@
+import { executeDiagnosticWorkerRun } from "../lib/server/diagnostics/diagnosticWorkerRunCore";
+let passed = 0; const assert = (v: unknown, m: string) => { if (!v) throw new Error(m); passed++; };
+const token = "synthetic_demo_token_1234567890", secret = "synthetic_worker_secret_1234567890";
+function harness(overrides: any = {}) { const calls: any[] = []; return { calls, d: { environment: "development", projectId: "demo-velocity-diagnostics", enabled: true, expectedToken: token, trustedOrigin: "https://velocity.demo.test", workerSecret: secret, dispatch: async (url: string, supplied: string) => { calls.push({ url, supplied }); if (overrides.failure) throw new Error("raw worker secret"); return { ok: true, status: 200 }; }, createRunId: () => "diagnostic_run_001", ...overrides } }; }
+const request = (query = "?mode=tick&t=synthetic", supplied = token, headers: Record<string,string> = {}) => new Request(`https://attacker.example/api/debug/run${query}`, { method: "GET", headers: { "x-demo-token": supplied, host: "attacker.example", "x-forwarded-host": "evil.example", ...headers } });
+async function main() {
+  for (const configuration of [{ environment: "production" }, { enabled: false }, { projectId: "production-project" }]) { const h = harness(configuration); const r = await executeDiagnosticWorkerRun(request(), h.d); assert(r.status === 404 && h.calls.length === 0, "production isolation failed"); }
+  const unauth = harness(); const denied = await executeDiagnosticWorkerRun(request("?mode=tick", "wrong_token_value_123456"), unauth.d); assert(denied.status === 403 && unauth.calls.length === 0, "unverified request dispatched");
+  for (const query of ["?mode=full", "?tenantId=tenant_alpha", "?mode=tick&mode=tick", "?t=%0Aevil"]) { const h = harness(); const r = await executeDiagnosticWorkerRun(request(query), h.d); assert(r.status === 400 && h.calls.length === 0, `invalid query dispatched: ${query}`); }
+  const h = harness(), result = await executeDiagnosticWorkerRun(request(), h.d); assert(result.status === 200 && result.body.ok && h.calls.length === 2, "authorized demo tick failed"); assert(h.calls.every(call => call.url.startsWith("https://velocity.demo.test/api/worker/") && !call.url.includes("evil.example")), "caller host selected dispatch origin"); assert(h.calls.every(call => call.supplied === secret), "worker credential changed"); assert(result.body.ok && Object.keys(result.body).sort().join() === "mode,ok,results,runId", "response not allowlisted"); assert(!JSON.stringify(result).includes(secret), "worker secret leaked");
+  const failed = harness({ failure: true }); const failure = await executeDiagnosticWorkerRun(request(), failed.d); assert(failure.status === 500 && !JSON.stringify(failure).match(/worker secret|raw/i), "dependency error leaked");
+  console.log(`Diagnostic worker-run deterministic regression: ${passed}/${passed} passed`);
+}
+main().catch(e => { console.error(e); process.exit(1); });

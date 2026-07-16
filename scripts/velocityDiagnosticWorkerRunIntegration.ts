@@ -1,0 +1,5 @@
+import { executeDiagnosticWorkerRun } from "../lib/server/diagnostics/diagnosticWorkerRunCore";
+let calls = 0; const token = "synthetic_demo_token_1234567890";
+const dependencies = { environment: "development", projectId: "demo-velocity-diagnostics", enabled: true, expectedToken: token, trustedOrigin: "http://127.0.0.1:3000", workerSecret: "synthetic_worker_secret_1234567890", dispatch: async (url: string) => { calls++; return { ok: url.endsWith(calls === 1 ? "/api/worker/files/process" : "/api/worker/ai/process"), status: 200 }; }, createRunId: () => "diagnostic_integration_001" };
+async function main() { const result = await executeDiagnosticWorkerRun(new Request("http://localhost/api/debug/run?mode=tick", { headers: { "x-demo-token": token, "x-forwarded-host": "attacker.test" } }), dependencies); if (!result.body.ok || calls !== 2 || result.body.results.some(item => !item.ok)) throw new Error("controlled dispatch integration failed"); console.log("Diagnostic worker-run non-network integration: 1/1 passed; Firebase access: 0; production worker access: 0"); }
+main().catch(e => { console.error(e); process.exit(1); });

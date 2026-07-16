@@ -71,6 +71,8 @@
     "velocity:application-read": "npm run velocity:applications:read-route && npm run velocity:application-read:emulator",
     "velocity:stripe-billing": "npx tsx scripts/velocityStripeBillingRegression.ts",
     "velocity:stripe-billing:integration": "npx tsx scripts/velocityStripeBillingIntegration.ts",
+    "velocity:diagnostic-worker-run": "npx tsx scripts/velocityDiagnosticWorkerRunRegression.ts",
+    "velocity:diagnostic-worker-run:integration": "npx tsx scripts/velocityDiagnosticWorkerRunIntegration.ts",
     "velocity:regressions": "npx tsx scripts/velocityRegressionSuite.ts",
     "velocity:check": "npm run build && npm run velocity:regressions"
   },
