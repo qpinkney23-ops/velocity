@@ -3,14 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   collection,
-  getDocs,
   limit,
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp,
-  updateDoc,
-  doc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useToast } from "@/components/ui/ToastProvider";
@@ -70,7 +66,6 @@ export default function AdminPage() {
 
   const [underwriters, setUnderwriters] = useState<Underwriter[]>([]);
   const [apps, setApps] = useState<AppRow[]>([]);
-  const [busy, setBusy] = useState(false);
   const [billingBusy, setBillingBusy] = useState(false);
   const [checkoutBusy, setCheckoutBusy] = useState(false);
 
@@ -114,15 +109,6 @@ export default function AdminPage() {
     const assigned = apps.filter((a) => !!(a.underwriterId || "").toString().trim()).length;
     const unassigned = totalApps - assigned;
 
-    const canBackfill = apps.filter((a) => {
-      const bnMissing = !(a.borrowerName || "").toString().trim();
-      const emMissing = !(a.email || "").toString().trim();
-      const sb = (a.scan?.extracted?.borrower || "").toString().trim();
-      const se = (a.scan?.extracted?.email || "").toString().trim();
-
-      return (bnMissing && sb) || (emMissing && se);
-    }).length;
-
     const activeUnderwriters = underwriters.filter((u) => u.active !== false).length;
 
     return {
@@ -130,67 +116,12 @@ export default function AdminPage() {
       totalVol,
       missingBorrower,
       missingEmail,
-      canBackfill,
       assigned,
       unassigned,
       activeUnderwriters,
       assignmentCoverage: pct(assigned, totalApps),
     };
   }, [apps, underwriters]);
-
-  async function backfillFromScan() {
-    if (busy) return;
-    setBusy(true);
-
-    try {
-      const snap = await getDocs(query(collection(db, "applications"), limit(500)));
-
-      let scanned = 0;
-      let updated = 0;
-      let skipped = 0;
-
-      for (const d of snap.docs) {
-        scanned += 1;
-
-        const data = (d.data() as any) || {};
-        const borrowerName = (data.borrowerName || "").toString().trim();
-        const email = (data.email || "").toString().trim();
-
-        const scanBorrower = (data.scan?.extracted?.borrower || "").toString().trim();
-        const scanEmail = (data.scan?.extracted?.email || "").toString().trim();
-
-        const patch: any = {};
-
-        if (!borrowerName && scanBorrower) patch.borrowerName = scanBorrower;
-        if (!email && scanEmail) patch.email = scanEmail;
-
-        if (Object.keys(patch).length === 0) {
-          skipped += 1;
-          continue;
-        }
-
-        patch.updatedAt = serverTimestamp();
-
-        await updateDoc(doc(db, "applications", d.id), patch);
-        updated += 1;
-      }
-
-      toast({
-        type: "success",
-        title: "Backfill complete",
-        message: `Scanned ${scanned}. Updated ${updated}. Skipped ${skipped}.`,
-        durationMs: 4200,
-      });
-    } catch (e: any) {
-      toast({
-        type: "error",
-        title: "Backfill failed",
-        message: e?.message ?? "Unknown error",
-      });
-    } finally {
-      setBusy(false);
-    }
-  }
 
   async function startIntroCheckout() {
     if (checkoutBusy) return;
@@ -306,17 +237,11 @@ export default function AdminPage() {
         <div className="v-card p-4">
           <div className="text-xs v-muted">Missing Borrower</div>
           <div className="text-2xl font-semibold mt-1">{stats.missingBorrower}</div>
-          <div className="mt-2">
-            <Chip label={`${stats.canBackfill} backfillable`} kind={stats.canBackfill > 0 ? "warn" : "muted"} />
-          </div>
         </div>
 
         <div className="v-card p-4">
           <div className="text-xs v-muted">Missing Email</div>
           <div className="text-2xl font-semibold mt-1">{stats.missingEmail}</div>
-          <div className="mt-2">
-            <Chip label="AI Scan Snapshot" kind="ok" />
-          </div>
         </div>
 
         <div className="v-card p-4">
@@ -328,11 +253,9 @@ export default function AdminPage() {
         </div>
 
         <div className="v-card p-4">
-          <div className="text-xs v-muted">Data Repair</div>
-          <div className="text-sm font-semibold mt-1">Borrower / Email Backfill</div>
-          <button className="v-btn mt-3" onClick={backfillFromScan} disabled={busy}>
-            {busy ? "Backfilling..." : "Run Backfill"}
-          </button>
+          <div className="text-xs v-muted">Application Integrity</div>
+          <div className="text-sm font-semibold mt-1">Server-authoritative mutations</div>
+          <div className="text-xs v-muted mt-2">Legacy scan-derived borrower repair is retired.</div>
         </div>
       </div>
 

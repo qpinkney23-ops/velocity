@@ -37,12 +37,12 @@ service cloud.firestore {
     }
 
     // Applications collection
-    // - Any signed-in user can read/write (V1 workflow platform behavior)
+    // - Signed-in users retain reads while application mutations are server-authoritative
     // - Only admin can delete
     match /applications/{id} {
       allow read: if isSignedIn();
       allow create: if false; // SEC-002: application creation is server-authoritative.
-      allow update: if isSignedIn();
+      allow update: if false; // SEC-002: application updates are server-authoritative.
       allow delete: if isAdmin();
     }
 
