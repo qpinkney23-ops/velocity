@@ -1,18 +1,12 @@
 import { NextResponse } from "next/server";
 import { initAdmin } from "@/lib/firebase-admin";
 import crypto from "crypto";
+import { abandonWorkerExecution, authorizeProductionWorker, completeWorkerExecution, lookupWorkerExecutionReceipt, reserveWorkerExecution } from "@/lib/server/workers/workerServiceAuth";
 
 export const runtime = "nodejs";
 
 const LEASE_MS = 5 * 60 * 1000; // 5 minutes
 const LEASE_FIELD = "workerLease"; // { holder, stage, claimedAt, expiresAt }
-
-function assertWorkerAuth(req: Request) {
-  const expected = process.env.WORKER_SECRET || process.env.X_WORKER_SECRET || "";
-  if (!expected) throw new Error("500: WORKER_SECRET missing on server");
-  const got = req.headers.get("x-worker-secret") || "";
-  if (!got || got !== expected) throw new Error("401: Unauthorized (bad x-worker-secret)");
-}
 
 function is401(err: unknown) {
   return typeof err === "object" && err !== null && String((err as any).message || "").startsWith("401:");
@@ -20,9 +14,8 @@ function is401(err: unknown) {
 
 function errToObj(e: any) {
   return {
-    name: e?.name || "Error",
-    message: e?.message || String(e),
-    stack: e?.stack || null,
+    code: "AI_PROCESSING_FAILED",
+    message: "AI processing failed",
   };
 }
 
@@ -50,7 +43,7 @@ function firstMatchEvidence(re: RegExp, text: string): string {
   return s ? `Matched: "${s.slice(0, 160)}"` : "Matched pattern";
 }
 
-async function claimOneAnalyzingJob(db: any, admin: any) {
+async function claimOneAnalyzingJob(db: any, admin: any, authorization: any) {
   const leaseId = crypto.randomUUID();
   const now = admin.firestore.Timestamp.now();
   const expiresAt = admin.firestore.Timestamp.fromMillis(now.toMillis() + LEASE_MS);
@@ -58,6 +51,7 @@ async function claimOneAnalyzingJob(db: any, admin: any) {
   const claimed = await db.runTransaction(async (tx: any) => {
     const q = db
       .collection("applications")
+      .where("tenantId", "in", authorization.grant.tenantIds)
       .where("processingStage", "==", "analyzing")
       .orderBy("updatedAt", "asc")
       .limit(1);
@@ -72,6 +66,8 @@ async function claimOneAnalyzingJob(db: any, admin: any) {
     if (!fresh.exists) return null;
 
     const app = fresh.data() as any;
+    if (app?.ownershipState !== "tenant_owned" || !authorization.grant.tenantIds.includes(app?.tenantId)) return null;
+    if (Number(app?.workerAttempt || 0) >= 5) return null;
     const stage = String(app?.processingStage || "");
     if (stage !== "analyzing") return null;
 
@@ -86,6 +82,10 @@ async function claimOneAnalyzingJob(db: any, admin: any) {
       {
         [LEASE_FIELD]: {
           holder: leaseId,
+          servicePrincipalId: authorization.principal.servicePrincipalId,
+          serviceGrantVersion: authorization.grant.grantVersion,
+          leaseVersion: "worker-lease.v1",
+          attempt: Math.min(Number(app?.workerAttempt || 0) + 1, 5),
           stage: "analyzing",
           claimedAt: now,
           expiresAt,
@@ -96,47 +96,52 @@ async function claimOneAnalyzingJob(db: any, admin: any) {
       { merge: true }
     );
 
-    return { leaseId, ref, appId: ref.id, app };
+    return { leaseId, ref, appId: ref.id, app, authorization };
   });
 
   return claimed;
 }
 
-async function releaseLease(ref: any, admin: any, reason: "success" | "failed" | "skipped") {
+async function releaseLease(ref: any, admin: any, reason: "success" | "failed" | "skipped", expectedLeaseId?: string, expectedPrincipalId?: string) {
   const now = admin.firestore.Timestamp.now();
-  await ref.set(
-    {
-      [LEASE_FIELD]: null,
-      leaseReleasedAt: now,
-      leaseReleaseReason: reason,
-      updatedAt: now,
-    },
-    { merge: true }
-  );
+  await ref.firestore.runTransaction(async (tx: any) => {
+    const snapshot = await tx.get(ref), lease = snapshot.data()?.[LEASE_FIELD];
+    if (!lease?.holder) throw new Error("stale worker lease");
+    if ((expectedLeaseId && lease.holder !== expectedLeaseId) || (expectedPrincipalId && lease.servicePrincipalId !== expectedPrincipalId)) throw new Error("stale worker lease");
+    tx.create(ref.collection("serviceExecutionAudits").doc(`${lease.holder}:${reason}`), { schemaVersion: "worker-service-audit.v1", executionId: lease.holder, worker: "ai", outcome: reason, servicePrincipalId: lease.servicePrincipalId, grantVersion: lease.serviceGrantVersion, attempt: lease.attempt, piiPresent: false, createdAt: now });
+    if (reason === "success") tx.create(ref.collection("serviceExecutionReceipts").doc(lease.holder), { schemaVersion: "worker-service-receipt.v1", executionId: lease.holder, worker: "ai", status: "completed", attempt: lease.attempt, piiPresent: false, completedAt: now });
+    tx.set(ref, { [LEASE_FIELD]: null, workerAttempt: lease.attempt, leaseReleasedAt: now, leaseReleaseReason: reason, updatedAt: now }, { merge: true });
+  });
 }
 
 export async function POST(req: Request) {
   try {
-    assertWorkerAuth(req);
+    const service = await authorizeProductionWorker(req, "ai_worker");
+    if (!service.ok) return NextResponse.json({ ok: false, error: { code: service.code, message: "Worker service authorization failed" }, requestId: service.requestId, correlationId: service.correlationId, retryable: false }, { status: service.code === "SERVICE_AUTH_REQUIRED" || service.code === "SERVICE_AUTH_INVALID" ? 401 : 403 });
+    if (service.authorization.requestReplay) { const receipt = await lookupWorkerExecutionReceipt(service.authorization.executionFingerprint); return receipt ? NextResponse.json(receipt,{status:200}) : NextResponse.json({ok:false,error:{code:"SERVICE_REQUEST_REPLAYED",message:"Service request replayed"},requestId:service.authorization.principal.requestId,correlationId:service.authorization.principal.correlationId,retryable:false},{status:409}); }
+    const command=await reserveWorkerExecution(service.authorization);if(command.status==="completed")return NextResponse.json(command.receipt,{status:200});if(command.status==="running")return NextResponse.json({ok:false,error:{code:"JOB_ALREADY_CLAIMED",message:"Worker execution already running"},requestId:service.authorization.principal.requestId,correlationId:service.authorization.principal.correlationId,retryable:true},{status:409});
 
     const { db, admin } = initAdmin();
     const now = admin.firestore.Timestamp.now();
 
     // 1) Claim (lock) one job
-    const claimed = await claimOneAnalyzingJob(db, admin);
+    const claimed = await claimOneAnalyzingJob(db, admin, service.authorization);
     if (!claimed) {
-      return NextResponse.json({ ok: true, processed: 0, msg: "No claimable analyzing jobs." }, { status: 200 });
+      const receipt={ok:true,status:"completed",executionId:`execution_${service.authorization.executionFingerprint.slice(0,24)}`,worker:"ai",processed:0,requestId:service.authorization.principal.requestId,correlationId:service.authorization.principal.correlationId};await completeWorkerExecution(service.authorization,receipt);return NextResponse.json(receipt,{status:200});
     }
 
     const { ref, appId } = claimed;
+    const finish = async (processed: 0 | 1) => { const receipt={ok:true,status:"completed",executionId:claimed.leaseId,worker:"ai",processed,requestId:service.authorization.principal.requestId,correlationId:service.authorization.principal.correlationId};await completeWorkerExecution(service.authorization,receipt);return NextResponse.json(receipt,{status:200}); };
+    try { if (process.env.GCLOUD_PROJECT?.startsWith("demo-") && req.headers.get("x-velocity-test-audit-failure") === "start") throw new Error("injected"); await ref.collection("serviceExecutionAudits").doc(`${claimed.leaseId}:start`).create({ schemaVersion: "worker-service-audit.v1", executionId: claimed.leaseId, worker: "ai", outcome: "started", servicePrincipalId: service.authorization.principal.servicePrincipalId, grantVersion: service.authorization.grant.grantVersion, requestId: service.authorization.principal.requestId, correlationId: service.authorization.principal.correlationId, piiPresent: false, createdAt: new Date().toISOString() }); } catch { await releaseLease(ref, admin, "failed").catch(() => undefined); await abandonWorkerExecution(service.authorization).catch(() => undefined); return NextResponse.json({ ok: false, error: { code: "AUDIT_REQUIRED", message: "Required service audit failed" }, requestId: service.authorization.principal.requestId, correlationId: service.authorization.principal.correlationId, retryable: true }, { status: 500 }); }
+    if (process.env.GCLOUD_PROJECT?.startsWith("demo-") && req.headers.get("x-velocity-test-lease-mode")) await ref.set({ workerLease: { ...(await ref.get()).data()?.workerLease, holder: req.headers.get("x-velocity-test-lease-mode") === "stale" ? "stale_lease_holder" : claimed.leaseId, servicePrincipalId: req.headers.get("x-velocity-test-lease-mode") === "wrong_principal" ? "other_service" : service.authorization.principal.servicePrincipalId } }, { merge: true });
 
     // 2) Re-read authoritative data
     const snap = await ref.get();
     const app = (snap.data() || {}) as any;
 
     if (String(app?.processingStage || "") !== "analyzing") {
-      await releaseLease(ref, admin, "skipped");
-      return NextResponse.json({ ok: true, processed: 0, appId, msg: "Job no longer in analyzing; skipped." }, { status: 200 });
+      await releaseLease(ref, admin, "skipped", claimed.leaseId, service.authorization.principal.servicePrincipalId);
+      return finish(0);
     }
 
     const companyProfileId = String(app?.companyProfileId || "");
@@ -156,8 +161,8 @@ export async function POST(req: Request) {
         },
         { merge: true }
       );
-      await releaseLease(ref, admin, "failed");
-      return NextResponse.json({ ok: true, processed: 1, appId, decision: "conditional", matched: 0, conditionsMatched: 0, msg: "Missing companyProfileId; completed as conditional." }, { status: 200 });
+      await releaseLease(ref, admin, "failed", claimed.leaseId, service.authorization.principal.servicePrincipalId);
+      return finish(1);
     }
 
     if (!text || text.trim().length === 0) {
@@ -172,8 +177,8 @@ export async function POST(req: Request) {
         },
         { merge: true }
       );
-      await releaseLease(ref, admin, "failed");
-      return NextResponse.json({ ok: true, processed: 1, appId, decision: "conditional", matched: 0, conditionsMatched: 0, msg: "Missing extracted text; completed as conditional." }, { status: 200 });
+      await releaseLease(ref, admin, "failed", claimed.leaseId, service.authorization.principal.servicePrincipalId);
+      return finish(1);
     }
 
     // 3) Company profile -> rulePackId (NO silent fallback)
@@ -190,8 +195,8 @@ export async function POST(req: Request) {
         },
         { merge: true }
       );
-      await releaseLease(ref, admin, "failed");
-      return NextResponse.json({ ok: true, processed: 1, appId, decision: "conditional", matched: 0, conditionsMatched: 0, companyProfileId, msg: "Company profile missing; completed as conditional." }, { status: 200 });
+      await releaseLease(ref, admin, "failed", claimed.leaseId, service.authorization.principal.servicePrincipalId);
+      return finish(1);
     }
 
     const company = companySnap.data() as any;
@@ -208,8 +213,8 @@ export async function POST(req: Request) {
         },
         { merge: true }
       );
-      await releaseLease(ref, admin, "failed");
-      return NextResponse.json({ ok: true, processed: 1, appId, decision: "conditional", matched: 0, conditionsMatched: 0, companyProfileId, msg: "Missing rulePackId; completed as conditional." }, { status: 200 });
+      await releaseLease(ref, admin, "failed", claimed.leaseId, service.authorization.principal.servicePrincipalId);
+      return finish(1);
     }
 
     // 4) Load base rule pack
@@ -226,8 +231,8 @@ export async function POST(req: Request) {
         },
         { merge: true }
       );
-      await releaseLease(ref, admin, "failed");
-      return NextResponse.json({ ok: true, processed: 1, appId, decision: "conditional", matched: 0, conditionsMatched: 0, rulePackId, companyProfileId, msg: "Rule pack missing; completed as conditional." }, { status: 200 });
+      await releaseLease(ref, admin, "failed", claimed.leaseId, service.authorization.principal.servicePrincipalId);
+      return finish(1);
     }
 
     const pack = packSnap.data() as any;
@@ -371,33 +376,9 @@ export async function POST(req: Request) {
       { merge: true }
     );
 
-    await releaseLease(ref, admin, "success");
-
-    return NextResponse.json(
-      {
-        ok: true,
-        processed: 1,
-        appId,
-        decision,
-        matched: matchedFindings.length,
-        conditionsMatched: conditions.length,
-        rulePackId,
-        companyProfileId,
-        programId: programId || null,
-        overlayApplied,
-        overlayRuleCount,
-      },
-      { status: 200 }
-    );
+    await releaseLease(ref, admin, "success", claimed.leaseId, service.authorization.principal.servicePrincipalId);
+    const receipt={ok:true,status:"completed",executionId:claimed.leaseId,worker:"ai",processed:1,requestId:service.authorization.principal.requestId,correlationId:service.authorization.principal.correlationId};await completeWorkerExecution(service.authorization,receipt);return NextResponse.json(receipt,{status:200});
   } catch (err: any) {
-    const msg = String(err?.message || err);
-
-    // If we fail before claiming, nothing to release.
-    // If we fail after claiming, we don't have the ref here, so we just return the error.
-    // (The lease expires automatically via expiresAt, so it will self-heal.)
-    if (is401(err)) return NextResponse.json({ ok: false, error: msg }, { status: 401 });
-    if (msg.startsWith("500:")) return NextResponse.json({ ok: false, error: msg }, { status: 500 });
-
-    return NextResponse.json({ ok: false, error: msg, detail: errToObj(err) }, { status: 500 });
+    return NextResponse.json({ok:false,error:{code:"WORKER_EXECUTION_FAILED",message:"AI worker execution failed"},retryable:true},{status:500});
   }
 }
