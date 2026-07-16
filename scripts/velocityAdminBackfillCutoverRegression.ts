@@ -29,7 +29,7 @@ test("production application update rule is server-authoritative", () => {
   assert(applicationRule.includes("allow read: if false"));
   assert(applicationRule.includes("allow create: if false"));
   assert(applicationRule.includes("allow update: if false"));
-  assert(applicationRule.includes("allow delete: if isAdmin()"));
+  assert(applicationRule.includes("allow delete: if false"));
 });
 test("no unrelated production rule changes are encoded by this slice", () => {
   assert(rules.includes("match /users/{uid}"));

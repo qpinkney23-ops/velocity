@@ -38,12 +38,12 @@ service cloud.firestore {
 
     // Applications collection
     // - All production application access is server-authoritative
-    // - Only admin can delete
+    // - No browser principal may create, read, update, or delete applications
     match /applications/{id} {
       allow read: if false; // SEC-002: browser reads use authenticated server projections.
       allow create: if false; // SEC-002: application creation is server-authoritative.
       allow update: if false; // SEC-002: application updates are server-authoritative.
-      allow delete: if isAdmin();
+      allow delete: if false; // SEC-002: application deletion is disabled pending approved retention policy.
     }
 
     // Default deny
