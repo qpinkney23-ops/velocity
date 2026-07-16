@@ -3,7 +3,26 @@
 Date: 2026-07-15  
 Branch: `enterprise-v1-lock`  
 Audit mode: read-only repository evidence plus executed regressions  
-Decision: **implementation-complete for reusable authorization boundaries, but production-migration incomplete**
+Decision: **partially complete**
+
+## 2026-07-16 enforcement refresh
+
+This refresh supersedes stale production-state statements later in this historical audit. The application and mortgage-document surfaces have materially advanced: production browser Firestore access to `applications` is denied for create, read, update, and delete; production browser Storage access is denied for legacy and canonical mortgage paths; application list/detail, create, workflow/business-state, analyze, decisions, document lifecycle/bytes, reports, Stripe, worker, and scheduler operations now have authenticated server boundaries with tenant/resource authorization and dedicated regressions. The admin-backfill emulator was reconciled to this full-deny posture without changing either production rules file.
+
+The complete deterministic matrix and the real Auth, Firestore, and Storage emulator/integration matrix passed on 2026-07-16. One application-create emulator invocation transiently failed its audit-PII assertion during the long aggregate run; an immediate isolated rerun passed with mandatory child markers and clean shutdown without a code change. The admin-backfill reconciliation and production Storage cutover focused suites were independently green.
+
+SEC-002 is nevertheless **not complete** and is classified **partially complete**, rather than implementation-complete, because repository inspection still identifies material authorization work:
+
+- tenantless legacy application/document/object ownership has no operational inventory, adjudication, migration, or rollback execution;
+- `/underwriters` still performs direct browser Firestore administration and registration still creates the legacy `/users/{uid}` profile, whose self-update rule remains unsuitable as authorization authority;
+- there is no governed audit-read or audit-export production boundary;
+- authorization caching remains a contract/policy only, without deployed cache, invalidation channel, revocation drill, or operational monitoring;
+- worker and scheduler service-grant enforcement exists, but production service-principal/grant provisioning and rotation remain operational dependencies;
+- `/firebase-test`, `/debug`, `/upload`, `/api/debug/run`, and `/api/debug/overlay/from-storage` still require explicit production removal or governed disposition;
+- Admin SDK use is widespread and mostly sits behind the new canonical boundaries, but the remaining diagnostic Admin routes require removal/disposition and a final route-by-route bypass audit;
+- the provisional role/permission matrix, active-tenant selection, user/membership administration, and underwriter administration still require production governance.
+
+`CAPABILITY_REGISTRY.md` remains unchanged. Browser Firestore and Storage lockout is necessary evidence, but it does not satisfy SEC-002 acceptance across administration, audit access/export, operational provisioning, cache invalidation, diagnostics, and legacy ownership.
 
 ## 1. Executive decision
 

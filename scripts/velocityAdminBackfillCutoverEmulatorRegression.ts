@@ -2,8 +2,9 @@
 import assert from "node:assert/strict";
 import { deleteApp, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { assertFails, assertSucceeds, initializeTestEnvironment } from "@firebase/rules-unit-testing";
+import { assertFails, initializeTestEnvironment } from "@firebase/rules-unit-testing";
 import { createProductionApplicationForUser } from "../lib/server/applications/applicationCreateProduction";
+import { detailApplicationProjection } from "../lib/server/applications/applicationReadProjection";
 import { resolverAuth, resolverMembership, resolverTenant } from "../lib/server/authorization/tenantAuthorizationResolverFixtures";
 
 const project = "demo-velocity-admin-backfill-cutover";
@@ -29,14 +30,23 @@ async function main() {
     await db.doc("applications/application_delete_control").set({ tenantId: "tenant_alpha", ownershipState: "tenant_owned", createdBy: "admin_user" });
 
     const client = env.authenticatedContext("admin_user").firestore();
-    await assertSucceeds(client.doc("applications/application_alpha").get());
+    const crossTenantClient = env.authenticatedContext("other_user").firestore();
+    const alphaBefore = JSON.stringify((await db.doc("applications/application_alpha").get()).data());
+    const deleteBefore = JSON.stringify((await db.doc("applications/application_delete_control").get()).data());
+    await assertFails(client.doc("applications/application_alpha").get());
     await assertFails(client.doc("applications/application_alpha").update({ notes: "browser mutation" }));
-    assert.equal((await db.doc("applications/application_alpha").get()).data()?.notes, "before");
-    await assertSucceeds(client.doc("applications/application_delete_control").delete());
-    assert(!(await db.doc("applications/application_delete_control").get()).exists);
+    await assertFails(client.doc("applications/browser_created").set({ tenantId: "tenant_alpha", borrowerName: "Browser Borrower" }));
+    await assertFails(client.doc("applications/application_delete_control").delete());
+    await assertFails(crossTenantClient.doc("applications/application_alpha").get());
+    assert.equal(JSON.stringify((await db.doc("applications/application_alpha").get()).data()), alphaBefore);
+    assert.equal(JSON.stringify((await db.doc("applications/application_delete_control").get()).data()), deleteBefore);
+    assert(!(await db.doc("applications/browser_created").get()).exists);
 
     const created = await createProductionApplicationForUser(auth("admin_user", "request_create_001"), { borrowerName: "Created Borrower", email: "created@example.test", loanAmount: 300000, idempotencyKey: "admin_cutover_create_001" });
     assert(created.ok);
+    const canonicalRead = await detailApplicationProjection({ auth: auth("admin_user", "request_read_001"), applicationId: created.applicationId });
+    assert(canonicalRead.ok);
+    assert.equal(canonicalRead.application.borrowerName, "Created Borrower");
     const alpha = (await db.doc("applications/application_alpha").get()).data()!;
     const beta = (await db.doc("applications/application_beta").get()).data()!;
     assert.equal(alpha.borrowerName, "Existing Borrower");
@@ -46,7 +56,7 @@ async function main() {
     const audits = await db.collection("tenants/tenant_alpha/applicationCreateAuditEvents").get();
     assert(!audits.empty);
     assert(!/Existing Borrower|existing@example|Conflicting Scan|conflict@example/.test(JSON.stringify(audits.docs.map(document => document.data()))));
-    console.log("ROLLBACK_EVIDENCE: application reads and admin deletes remain unchanged; only direct client updates are denied");
+    console.log("ROLLBACK_EVIDENCE: direct browser create, read, update, and delete are denied; Admin setup and canonical server reads remain functional");
     console.log("ADMIN_BACKFILL_CUTOVER_EMULATOR_CHILD_COMPLETED");
   } finally {
     await env.cleanup();

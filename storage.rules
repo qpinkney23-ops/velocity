@@ -3,15 +3,14 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    function isSignedIn() {
-      return request.auth != null;
+    // Legacy application objects are unresolved and have no browser authority.
+    match /applications/{applicationId}/{allPaths=**} {
+      allow read, write: if false;
     }
 
-    // App storage convention:
-    // applications/{applicationId}/...files
-    match /applications/{applicationId}/{allPaths=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
+    // Canonical mortgage documents and report artifacts are server/Admin only.
+    match /tenants/{tenantId}/applications/{applicationId}/{allPaths=**} {
+      allow read, write: if false;
     }
 
     // Default deny

@@ -87,6 +87,8 @@
     "velocity:application-read-cutover:emulator": "npx tsx scripts/velocityApplicationReadCutoverRunner.ts",
     "velocity:application-delete-cutover": "set NODE_PATH=tests/shims&& npx tsx scripts/velocityApplicationDeleteCutoverRegression.ts",
     "velocity:application-delete-cutover:emulator": "set NODE_PATH=tests/shims&& npx tsx scripts/velocityApplicationDeleteCutoverRunner.ts",
+    "velocity:production-storage-cutover": "npx tsx scripts/velocityProductionStorageCutoverRegression.ts",
+    "velocity:production-storage-cutover:emulator": "npx tsx scripts/velocityProductionStorageCutoverRunner.ts",
     "velocity:regressions": "npx tsx scripts/velocityRegressionSuite.ts",
     "velocity:check": "npm run build && npm run velocity:regressions"
   },

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { auth, db, storage } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { useToast } from "@/components/ui/ToastProvider";
 
 type Stage = { id: string; label: string };
@@ -63,14 +63,13 @@ export default function SettingsPage() {
     const user = auth?.currentUser;
     const hasAuth = !!auth;
     const hasDb = !!db;
-    const hasStorage = !!storage;
 
     return {
       signedIn: user ? "Signed in" : "Not signed in",
       email: user?.email || "—",
       auth: hasAuth ? "Connected" : "Not connected",
       firestore: hasDb ? "Connected" : "Not connected",
-      storage: hasStorage ? "Connected" : "Not connected",
+      storage: "Server managed",
     };
   }, []);
 
