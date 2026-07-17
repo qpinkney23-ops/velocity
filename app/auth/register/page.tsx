@@ -4,8 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createUserWithEmailAndPassword, signOut } from "firebase/auth";
-import { auth, db } from "@/lib/firebase";
-import { doc, serverTimestamp, setDoc } from "firebase/firestore";
+import { auth } from "@/lib/firebase";
 import { exchangeSession, sessionErrorMessage } from "@/lib/client/auth/velocitySession";
 
 function initials(email: string) {
@@ -43,18 +42,9 @@ export default function RegisterPage() {
     try {
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), pw);
 
-      // Create a role doc (default = processor) so role-based UI works immediately.
-      await setDoc(
-        doc(db, "users", cred.user.uid),
-        {
-          email: email.trim(),
-          name: name.trim(),
-          role: "processor",
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
+      const token=await cred.user.getIdToken();
+      const profile=await fetch("/api/auth/profile",{method:"POST",headers:{"content-type":"application/json",authorization:`Bearer ${token}`},body:JSON.stringify({displayName:name.trim()})});
+      if(!profile.ok)throw new Error("Profile creation failed");
       profileCreated = true;
 
       await exchangeSession(cred.user);
@@ -108,8 +98,7 @@ export default function RegisterPage() {
               </div>
 
               <div className="text-sm leading-6" style={{ color: "rgba(255,255,255,0.66)" }}>
-                Admins can assign roles (admin/underwriter/processor/LO) after registration.
-                New accounts default to <span style={{ color: "rgba(255,255,255,0.86)" }}>processor</span>.
+                New accounts remain unprovisioned until an approved tenant membership is assigned.
               </div>
 
               <div
@@ -123,7 +112,7 @@ export default function RegisterPage() {
                   Pro tip
                 </div>
                 <div className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.60)" }}>
-                  After you register, go to Admin → Users & Roles and set your role to admin.
+                  Tenant roles come only from governed membership records, never from browser profiles.
                 </div>
               </div>
             </div>

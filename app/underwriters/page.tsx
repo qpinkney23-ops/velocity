@@ -1,39 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  collection,
-  addDoc,
-  serverTimestamp,
-} from "firebase/firestore";
-import { db } from "@/lib/firebase";
 import { fetchApplicationPages } from "@/lib/applicationReadClient";
 
 export default function UnderwritersPage() {
   const [underwriters, setUnderwriters] = useState<any[]>([]);
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
 
   useEffect(() => {
     let active=true;const load=()=>fetchApplicationPages(1).then(({assignees})=>{if(active)setUnderwriters(assignees)});void load();const timer=setInterval(load,15000);return()=>{active=false;clearInterval(timer)};
   }, []);
-
-  async function addUnderwriter() {
-    if (!name || !email) {
-      alert("Enter name and email");
-      return;
-    }
-
-    await addDoc(collection(db, "underwriters"), {
-      name,
-      email,
-      active: true,
-      createdAt: serverTimestamp(),
-    });
-
-    setName("");
-    setEmail("");
-  }
 
   return (
     <div className="min-h-screen bg-gray-100 p-6 space-y-6">
@@ -45,32 +20,9 @@ export default function UnderwritersPage() {
         </p>
       </div>
 
-      {/* Add Form */}
-      <div className="bg-white p-6 rounded-xl border shadow-sm space-y-4">
-        <h2 className="font-semibold text-sm">Add Underwriter</h2>
-
-        <div className="flex gap-3">
-          <input
-            placeholder="Name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="border px-3 py-2 rounded-lg w-full text-sm"
-          />
-
-          <input
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="border px-3 py-2 rounded-lg w-full text-sm"
-          />
-
-          <button
-            onClick={addUnderwriter}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm"
-          >
-            Add
-          </button>
-        </div>
+      <div className="bg-white p-6 rounded-xl border shadow-sm space-y-2">
+        <h2 className="font-semibold text-sm">Tenant assignment directory</h2>
+        <p className="text-sm text-gray-500">Eligibility is derived from active tenant memberships. New underwriters require governed identity and membership provisioning.</p>
       </div>
 
       {/* List */}

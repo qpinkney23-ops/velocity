@@ -1,0 +1,1 @@
+{"emulators":{"firestore":{"port":8187},"auth":{"port":9197},"ui":{"enabled":false}},"firestore":{"rules":"firestore.rules"}}

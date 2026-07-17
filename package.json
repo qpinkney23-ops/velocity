@@ -93,6 +93,8 @@
     "velocity:legacy-ownership:emulator": "set NODE_PATH=tests/shims&& npx tsx scripts/velocityLegacyOwnershipRunner.ts",
     "velocity:platform-legacy-inventory": "set NODE_PATH=tests/shims&& npx tsx scripts/velocityPlatformLegacyInventoryRegression.ts",
     "velocity:platform-legacy-inventory:emulator": "set NODE_PATH=tests/shims&& npx tsx scripts/velocityPlatformLegacyInventoryRunner.ts",
+    "velocity:governance-admin-audit": "set NODE_PATH=tests/shims&& npx tsx scripts/velocityGovernanceAdminAuditRegression.ts",
+    "velocity:governance-admin-audit:emulator": "set NODE_PATH=tests/shims&& npx tsx scripts/velocityGovernanceAdminAuditRunner.ts",
     "velocity:regressions": "npx tsx scripts/velocityRegressionSuite.ts",
     "velocity:check": "npm run build && npm run velocity:regressions"
   },

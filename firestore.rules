@@ -7,33 +7,17 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // NOTE: This checks the user's role stored in /users/{uid}.role
-    function role() {
-      return isSignedIn()
-        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
-        : "";
-    }
-
-    function isAdmin() {
-      return role() == "admin";
-    }
-
-    // Users collection
-    // - Users can read their own profile
-    // - Admin can read/write any user profile
+    // User profiles are server-managed and contain no authorization authority.
+    // Browser users may read only their own safe profile projection.
     match /users/{uid} {
-      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
-      allow create: if isSignedIn() && request.auth.uid == uid; // user can create their own profile
-      allow update: if isSignedIn() && (request.auth.uid == uid || isAdmin());
-      allow delete: if isAdmin();
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow create, update, delete: if false;
     }
 
-    // Underwriters collection
-    // - Any signed-in user can read (needed for assignment dropdown + admin screens)
-    // - Only admin can create/update/delete underwriters
+    // Underwriter eligibility is derived server-side from active tenant memberships.
+    // Legacy underwriter records grant no browser authority.
     match /underwriters/{id} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isAdmin();
+      allow read, create, update, delete: if false;
     }
 
     // Applications collection
