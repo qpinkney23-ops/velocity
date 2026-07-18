@@ -35,6 +35,7 @@
     "velocity:authorization:decision": "npx tsx scripts/velocityAuthorizationDecisionRegression.ts",
     "velocity:authorization:audit-cache": "npx tsx scripts/velocityAuthorizationAuditCacheRegression.ts",
     "velocity:authorization:operations-closeout": "npm run velocity:authorization:contract && npm run velocity:authorization:resolver:contract && npm run velocity:authorization:decision && npm run velocity:authorization:application-resource && npm run velocity:authorization:application-document && npm run velocity:authorization:application && npm run velocity:authorization:application-document-action && npm run velocity:authorization:audit-cache && npm run velocity:worker-service-auth && npm run velocity:scheduler-service-auth && npx tsx scripts/velocityAuthorizationOperationsCloseoutRegression.ts",
+    "velocity:security:secrets": "npx tsx scripts/velocitySecretHygieneRegression.ts",
     "velocity:authorization:application-resource": "npx tsx scripts/velocityApplicationResourceResolverRegression.ts",
     "velocity:authorization:application-document": "npx tsx scripts/velocityApplicationDocumentResourceRegression.ts",
     "velocity:authorization:application-document:emulator:child": "firebase emulators:exec --config firebase.application-document-resource.test.json --project demo-velocity-application-document-resource --only firestore,storage \"npx tsx scripts/velocityApplicationDocumentResourceEmulatorRegression.ts\"",
