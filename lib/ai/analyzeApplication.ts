@@ -17,6 +17,19 @@ import {
   type VelocityCondition,
   type WorkflowState,
 } from "@/lib/ai/applicationAnalysisSchema";
+import {
+  calculateDebtToIncomeRatio,
+  calculateEstimatedPitia,
+  calculateLtv,
+  calculateMonthlyLiabilities,
+  calculateMonthlyQualifyingIncome,
+  calculationInput,
+  selectRepresentativeCreditScore,
+  type CalculationContext,
+  type CalculationEvidenceSource,
+  type CalculationInput,
+  type CanonicalCalculationSet,
+} from "@/lib/mortgage/canonicalCalculations";
 
 export type AnalysisResult = Omit<ApplicationAnalysisResult, "conditions"> & {
   // Legacy callers originally treated conditions as string labels.
@@ -34,6 +47,12 @@ export type AnalysisResult = Omit<ApplicationAnalysisResult, "conditions"> & {
   readiness?: ReadinessState;
 };
 export type { ParsedAnalysisDoc };
+type AnalyzeApplicationOptions = {
+  applicationId?: string;
+  analysisVersion?: string;
+  programContext?: string | null;
+  overlayContext?: string | null;
+};
 function cleanSpaces(value: string) {
   return (value || "").replace(/\s+/g, " ").trim();
 }
@@ -43,6 +62,20 @@ function clamp(n: number, min: number, max: number) {
 function round2(n: number | null) {
   if (typeof n !== "number" || !Number.isFinite(n)) return null;
   return Math.round(n * 100) / 100;
+}
+const INTERNAL_CALCULATION_CONTEXT: CalculationContext = {
+  timestamp: "1970-01-01T00:00:00.000Z",
+  programContext: null,
+  overlayContext: null,
+};
+function numericCalculationInput(key: string, label: string, value: number | null, unit: CalculationInput["unit"]): CalculationInput {
+  return calculationInput({ key, label, value, unit, evidenceSources: [], included: value !== null });
+}
+function monthlyIncomeValue(annualIncome: number | null): number | null {
+  return calculateMonthlyQualifyingIncome(
+    numericCalculationInput("annualIncome", "Annual qualifying income", annualIncome, "annual_currency"),
+    INTERNAL_CALCULATION_CONTEXT
+  ).result;
 }
 function safeNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -435,7 +468,7 @@ function classifyDebtForDtiScenario(liability: any): "required" | "review" | "ex
 
 function buildDtiScenarioSummary(normalized: any, liabilityItems: any[]): DtiScenarioSummary {
   const annualIncome = safePositive(normalized?.income);
-  const monthlyIncome = annualIncome ? annualIncome / 12 : null;
+  const monthlyIncome = monthlyIncomeValue(annualIncome);
   const proposedHousing =
     safePositive(normalized?.proposedHousingPayment?.total) ??
     safePositive(normalized?.housingPayment) ??
@@ -461,14 +494,20 @@ function buildDtiScenarioSummary(normalized: any, liabilityItems: any[]): DtiSce
   }
 
   const strictDebts = requiredDebts + reviewableDebts;
-  const strictDti =
-    monthlyIncome && proposedHousing !== null && proposedHousing !== undefined
-      ? round2(((strictDebts + proposedHousing) / monthlyIncome) * 100)
-      : null;
-  const optimizedDti =
-    monthlyIncome && proposedHousing !== null && proposedHousing !== undefined
-      ? round2(((requiredDebts + proposedHousing) / monthlyIncome) * 100)
-      : null;
+  const strictRatio = calculateDebtToIncomeRatio({
+    calculationName: "Back-End DTI",
+    monthlyIncome: numericCalculationInput("monthlyIncome", "Monthly qualifying income", monthlyIncome, "monthly_currency"),
+    obligations: [numericCalculationInput("strictDebts", "Strict monthly liabilities", strictDebts, "monthly_currency"), numericCalculationInput("pitia", "PITIA", proposedHousing ?? null, "monthly_currency")],
+    context: INTERNAL_CALCULATION_CONTEXT,
+  }).result;
+  const optimizedRatio = calculateDebtToIncomeRatio({
+    calculationName: "Back-End DTI",
+    monthlyIncome: numericCalculationInput("monthlyIncome", "Monthly qualifying income", monthlyIncome, "monthly_currency"),
+    obligations: [numericCalculationInput("requiredDebts", "Required monthly liabilities", requiredDebts, "monthly_currency"), numericCalculationInput("pitia", "PITIA", proposedHousing ?? null, "monthly_currency")],
+    context: INTERNAL_CALCULATION_CONTEXT,
+  }).result;
+  const strictDti = strictRatio === null ? null : round2(strictRatio * 100);
+  const optimizedDti = optimizedRatio === null ? null : round2(optimizedRatio * 100);
 
   const removableDebt = reviewableDebts;
 
@@ -747,7 +786,7 @@ function dtiAfterMonthlyReduction(
   monthlyReduction: number
 ): number | null {
   const annualIncome = safePositive(normalized?.income);
-  const monthlyIncome = annualIncome ? annualIncome / 12 : null;
+  const monthlyIncome = monthlyIncomeValue(annualIncome);
   const proposedHousing =
     safePositive(normalized?.proposedHousingPayment?.total) ??
     safePositive(normalized?.housingPayment) ??
@@ -762,7 +801,13 @@ function dtiAfterMonthlyReduction(
 
   const adjustedDebts = Math.max(0, currentDebts - Math.max(0, monthlyReduction));
 
-  return round2(((adjustedDebts + proposedHousing) / monthlyIncome) * 100);
+  const ratio = calculateDebtToIncomeRatio({
+    calculationName: "Back-End DTI",
+    monthlyIncome: numericCalculationInput("monthlyIncome", "Monthly qualifying income", monthlyIncome, "monthly_currency"),
+    obligations: [numericCalculationInput("adjustedDebts", "Adjusted monthly liabilities", adjustedDebts, "monthly_currency"), numericCalculationInput("pitia", "PITIA", proposedHousing, "monthly_currency")],
+    context: INTERNAL_CALCULATION_CONTEXT,
+  }).result;
+  return ratio === null ? null : round2(ratio * 100);
 }
 
 function buildActionableStrategyCandidates(included: any[]) {
@@ -902,15 +947,19 @@ function buildDtiActionPlanSummary(normalized: any, liabilityItems: any[]) {
 
 
 function computeDTI(income: number | null, debts: number | null) {
-  if (!income || !debts) return null;
-  const monthlyIncome = income / 12;
-  if (!monthlyIncome || monthlyIncome <= 0) return null;
-  return round2(debts / monthlyIncome);
+  return calculateDebtToIncomeRatio({
+    calculationName: "Consumer Debt Ratio",
+    monthlyIncome: numericCalculationInput("monthlyIncome", "Monthly qualifying income", monthlyIncomeValue(income), "monthly_currency"),
+    obligations: [numericCalculationInput("monthlyLiabilities", "Monthly liabilities", debts, "monthly_currency")],
+    context: INTERNAL_CALCULATION_CONTEXT,
+  }).result;
 }
 function computeLTV(loanAmount: number | null, propertyValue: number | null) {
-  if (!loanAmount || !propertyValue) return null;
-  if (propertyValue <= 0) return null;
-  return loanAmount / propertyValue;
+  return calculateLtv(
+    numericCalculationInput("loanAmount", "Loan amount", loanAmount, "currency"),
+    numericCalculationInput("propertyValue", "Property value", propertyValue, "currency"),
+    INTERNAL_CALCULATION_CONTEXT
+  ).result;
 }
 
 function uniqueSortedCreditScores(values: Array<number | null | undefined>) {
@@ -1003,61 +1052,24 @@ function collectMortgageCreditScores(docs: ParsedAnalysisDoc[]) {
 
 function pickMortgageRepresentativeCreditScore(docs: ParsedAnalysisDoc[]) {
   const scores = collectMortgageCreditScores(docs);
-
-  if (!scores.length) return null;
-
-  if (scores.length >= 3) {
-    const mid = Math.floor(scores.length / 2);
-    return scores[mid];
-  }
-
-  if (scores.length === 2) {
-    // With two usable bureau scores, mortgage practice is commonly conservative.
-    return Math.min(scores[0], scores[1]);
-  }
-
-  return scores[0];
+  return selectRepresentativeCreditScore(
+    scores.map((score, index) => numericCalculationInput(`score${index + 1}`, `Credit score ${index + 1}`, score, "credit_score")),
+    INTERNAL_CALCULATION_CONTEXT
+  ).result;
 }
 
 function formatCreditScoreSet(scores: number[]) {
   return scores.length ? scores.join(" / ") : "not available";
 }
 
-function estimateMonthlyPrincipalAndInterest(loanAmount: number, annualRate = 0.06875, years = 30) {
-  const monthlyRate = annualRate / 12;
-  const months = years * 12;
-
-  if (!loanAmount || loanAmount <= 0) return null;
-  if (!monthlyRate || monthlyRate <= 0) return round2(loanAmount / months);
-
-  const payment =
-    loanAmount *
-    ((monthlyRate * Math.pow(1 + monthlyRate, months)) /
-      (Math.pow(1 + monthlyRate, months) - 1));
-
-  return round2(payment);
-}
-
-function estimateMonthlyTaxes(propertyValue: number | null) {
-  if (!propertyValue || propertyValue <= 0) return null;
-  return round2((propertyValue * 0.0125) / 12);
-}
-
-function estimateMonthlyInsurance(propertyValue: number | null) {
-  if (!propertyValue || propertyValue <= 0) return null;
-  return round2((propertyValue * 0.0035) / 12);
-}
-
-function estimateMonthlyMortgageInsurance(loanAmount: number | null, ltv: number | null) {
+function estimatedAnnualMiRate(loanAmount: number | null, ltv: number | null) {
   if (!loanAmount || loanAmount <= 0 || !ltv || ltv <= 0.8) return 0;
-
-  const annualMiRate =
+  return (
     ltv > 0.97 ? 0.0085 :
     ltv > 0.95 ? 0.0075 :
     ltv > 0.9 ? 0.0065 :
-    0.005;
-
-  return round2((loanAmount * annualMiRate) / 12) ?? 0;
+    0.005
+  );
 }
 
 function estimateProposedHousingPayment(args: {
@@ -1065,29 +1077,25 @@ function estimateProposedHousingPayment(args: {
   propertyValue: number | null;
   ltv: number | null;
 }) {
-  const principalAndInterest =
-    args.loanAmount && args.loanAmount > 0
-      ? estimateMonthlyPrincipalAndInterest(args.loanAmount)
-      : null;
-
-  const taxes = estimateMonthlyTaxes(args.propertyValue);
-  const insurance = estimateMonthlyInsurance(args.propertyValue);
-  const mortgageInsurance = estimateMonthlyMortgageInsurance(args.loanAmount, args.ltv);
-
-  if (principalAndInterest === null) return null;
-
-  const total =
-    principalAndInterest +
-    (taxes ?? 0) +
-    (insurance ?? 0) +
-    mortgageInsurance;
-
+  const calculation = calculateEstimatedPitia({
+    loanAmount: numericCalculationInput("loanAmount", "Loan amount", args.loanAmount, "currency"),
+    propertyValue: numericCalculationInput("propertyValue", "Property value", args.propertyValue, "currency"),
+    ltv: numericCalculationInput("ltv", "LTV", args.ltv, "ratio"),
+    annualInterestRate: numericCalculationInput("annualInterestRate", "Estimated annual interest rate", 0.06875, "annual_rate"),
+    termYears: numericCalculationInput("termYears", "Amortization term", 30, "years"),
+    annualTaxRate: numericCalculationInput("annualTaxRate", "Estimated annual tax rate", 0.0125, "annual_rate"),
+    annualInsuranceRate: numericCalculationInput("annualInsuranceRate", "Estimated annual insurance rate", 0.0035, "annual_rate"),
+    annualMiRate: numericCalculationInput("annualMiRate", "Estimated annual MI rate", estimatedAnnualMiRate(args.loanAmount, args.ltv), "annual_rate"),
+    hoa: numericCalculationInput("hoa", "Monthly HOA", 0, "monthly_currency"),
+    context: INTERNAL_CALCULATION_CONTEXT,
+  });
+  if (calculation.components.principalAndInterest === null) return null;
   return {
-    total: round2(total),
-    principalAndInterest,
-    taxes,
-    insurance,
-    mortgageInsurance,
+    total: calculation.result,
+    principalAndInterest: calculation.components.principalAndInterest,
+    taxes: calculation.components.taxes,
+    insurance: calculation.components.insurance,
+    mortgageInsurance: calculation.components.mortgageInsurance,
     source: "estimated" as const,
     confidence: args.propertyValue ? "medium" as const : "low" as const,
   };
@@ -1098,17 +1106,12 @@ function computeTotalDTI(
   debts: number | null,
   proposedHousingPayment: number | null
 ) {
-  if (!income || income <= 0) return null;
-
-  const monthlyIncome = income / 12;
-  if (!monthlyIncome || monthlyIncome <= 0) return null;
-
-  const monthlyDebts = debts ?? 0;
-  const housing = proposedHousingPayment ?? 0;
-
-  if (monthlyDebts <= 0 && housing <= 0) return null;
-
-  return round2((monthlyDebts + housing) / monthlyIncome);
+  return calculateDebtToIncomeRatio({
+    calculationName: "Back-End DTI",
+    monthlyIncome: numericCalculationInput("monthlyIncome", "Monthly qualifying income", monthlyIncomeValue(income), "monthly_currency"),
+    obligations: [numericCalculationInput("monthlyLiabilities", "Monthly liabilities", debts ?? 0, "monthly_currency"), numericCalculationInput("pitia", "PITIA", proposedHousingPayment ?? 0, "monthly_currency")],
+    context: INTERNAL_CALCULATION_CONTEXT,
+  }).result;
 }
 
 type CompensatingFactorResult = {
@@ -1134,7 +1137,7 @@ function buildCompensatingFactors(normalized: NormalizedMetrics, docs: ParsedAna
   });
   const totalDti = computeTotalDTI(normalized.income, normalized.debts, proposedHousing?.total ?? null);
   const consumerDebtRatio = computeConsumerDebtRatio(normalized.income, normalized.debts);
-  const monthlyIncome = normalized.income ? normalized.income / 12 : null;
+  const monthlyIncome = monthlyIncomeValue(normalized.income);
 
   if (normalized.creditScore !== null) {
     if (normalized.creditScore >= 700) {
@@ -1320,10 +1323,6 @@ type LiabilityDecision = {
   excludedCount: number;
 };
 
-function roundMoney(value: number) {
-  return Math.round(value * 100) / 100;
-}
-
 function enrichLiabilitiesFromDocs(docs: ParsedAnalysisDoc[]): ParsedLiability[] {
   const liabilities: ParsedLiability[] = [];
 
@@ -1403,7 +1402,19 @@ function buildLiabilityDecision(docs: ParsedAnalysisDoc[]): LiabilityDecision {
 
   const selected = selectedSource === "credit" ? credit : selectedSource === "1003" ? declared1003 : selectedSource === "bank" ? bank : [];
   const included = selected.filter((liability) => liability.includeInDti && typeof liability.monthlyPayment === "number" && Number.isFinite(liability.monthlyPayment));
-  const total = included.length ? roundMoney(included.reduce((sum, liability) => sum + (liability.monthlyPayment || 0), 0)) : null;
+  const total = calculateMonthlyLiabilities(
+    selected.map((liability, index) => calculationInput({
+      key: `liability${index + 1}`,
+      label: liability.creditor || `Liability ${index + 1}`,
+      value: liability.monthlyPayment,
+      unit: "monthly_currency",
+      included: liability.includeInDti,
+      inclusionReason: liability.includeInDti ? liability.reason ?? "Included by existing liability treatment." : undefined,
+      exclusionReason: liability.includeInDti ? undefined : liability.reason ?? "Excluded by existing liability treatment.",
+      evidenceSources: [{ documentName: liability.sourceDocName, documentType: liability.sourceDocType, extractedField: "liabilities.monthlyPayment", value: liability.monthlyPayment, status: liability.includeInDti ? "used" : "ignored", reason: liability.reason ?? (liability.includeInDti ? "Included liability evidence." : "Excluded liability evidence.") }],
+    })),
+    INTERNAL_CALCULATION_CONTEXT
+  ).result;
   const authoritativeExcluded = all.filter((liability) => !liability.includeInDti && liability.source === selectedSource);
   const supportingBankNoise = selectedSource === "bank" || selectedSource === "none"
     ? []
@@ -4396,26 +4407,102 @@ async function buildReplayDocsFromPath(docPath: string): Promise<ParsedAnalysisD
   ];
 }
 
+function profileEvidenceSources(field: BorrowerProfileField<any>, extractedField: string): CalculationEvidenceSource[] {
+  const winner = field.winningSource;
+  const winningSources: CalculationEvidenceSource[] = winner ? [{
+    documentName: winner.docName,
+    documentType: winner.docType,
+    extractedField,
+    value: typeof field.value === "number" ? field.value : null,
+    status: "used",
+    reason: field.overridden ? field.overrideReason ?? "Manual override selected this value." : "Selected by existing source-precedence rules.",
+    manualOverrideApplied: field.overridden,
+  }] : [{ extractedField, value: typeof field.value === "number" ? field.value : null, status: "missing", reason: "No winning source was available." }];
+  const ignored = field.competingValues.map((candidate) => ({
+    documentName: candidate.docName,
+    documentType: candidate.docType,
+    extractedField,
+    value: typeof candidate.value === "number" ? candidate.value : null,
+    status: "ignored" as const,
+    reason: "Candidate was not selected by existing source-precedence rules.",
+  }));
+  return [...winningSources, ...ignored];
+}
+
+function profileCalculationInput(key: string, label: string, field: BorrowerProfileField<any>, unit: CalculationInput["unit"]): CalculationInput {
+  const value = typeof field.value === "number" && Number.isFinite(field.value) ? field.value : null;
+  return calculationInput({
+    key,
+    label,
+    value,
+    unit,
+    evidenceSources: profileEvidenceSources(field, key),
+    included: value !== null,
+    manualOverrideApplied: field.overridden,
+    missing: value === null,
+  });
+}
+
+function buildCanonicalCalculationSet(
+  normalized: NormalizedMetrics,
+  borrowerProfile: BorrowerProfile,
+  docs: ParsedAnalysisDoc[],
+  context: CalculationContext
+): CanonicalCalculationSet {
+  const annualIncome = profileCalculationInput("income", "Annual qualifying income", borrowerProfile.income, "annual_currency");
+  const monthlyQualifyingIncome = calculateMonthlyQualifyingIncome(annualIncome, context);
+  const liabilityInputs = normalized.liabilityDetails.length
+    ? normalized.liabilityDetails.map((liability, index) => calculationInput({
+        key: `liability${index + 1}`,
+        label: liability.creditor || `Liability ${index + 1}`,
+        value: liability.monthlyPayment,
+        unit: "monthly_currency",
+        included: liability.includeInDti,
+        inclusionReason: liability.includeInDti ? liability.reason ?? "Included by existing liability treatment." : undefined,
+        exclusionReason: liability.includeInDti ? undefined : liability.reason ?? "Excluded by existing liability treatment.",
+        evidenceSources: [{ documentName: liability.sourceDocName, documentType: liability.sourceDocType, extractedField: "liabilities.monthlyPayment", value: liability.monthlyPayment, status: liability.includeInDti ? "used" : "ignored", reason: liability.reason ?? (liability.includeInDti ? "Included liability evidence." : "Excluded liability evidence.") }],
+      }))
+    : [profileCalculationInput("debts", "Selected monthly liabilities", borrowerProfile.debts, "monthly_currency")];
+  const monthlyLiabilities = calculateMonthlyLiabilities(liabilityInputs, context);
+  const loanAmount = profileCalculationInput("loanAmount", "Loan amount", borrowerProfile.loanAmount, "currency");
+  const propertyValue = profileCalculationInput("propertyValue", "Property value", borrowerProfile.propertyValue, "currency");
+  const ltv = calculateLtv(loanAmount, propertyValue, context);
+  const pitia = calculateEstimatedPitia({
+    loanAmount,
+    propertyValue,
+    ltv: calculationInput({ key: "ltv", label: "LTV", value: ltv.result, unit: "ratio", evidenceSources: ltv.evidenceSources, included: ltv.result !== null, estimated: false }),
+    annualInterestRate: calculationInput({ key: "annualInterestRate", label: "Estimated annual interest rate", value: 0.06875, unit: "annual_rate", evidenceSources: [{ extractedField: "configuredAssumption.annualInterestRate", value: 0.06875, status: "used", reason: "Existing analysis housing-payment assumption." }], included: true, estimated: true }),
+    termYears: calculationInput({ key: "termYears", label: "Amortization term", value: 30, unit: "years", evidenceSources: [{ extractedField: "configuredAssumption.termYears", value: 30, status: "used", reason: "Existing analysis housing-payment assumption." }], included: true, estimated: true }),
+    annualTaxRate: calculationInput({ key: "annualTaxRate", label: "Estimated annual tax rate", value: 0.0125, unit: "annual_rate", evidenceSources: [{ extractedField: "configuredAssumption.annualTaxRate", value: 0.0125, status: "used", reason: "Existing analysis housing-payment assumption." }], included: true, estimated: true }),
+    annualInsuranceRate: calculationInput({ key: "annualInsuranceRate", label: "Estimated annual insurance rate", value: 0.0035, unit: "annual_rate", evidenceSources: [{ extractedField: "configuredAssumption.annualInsuranceRate", value: 0.0035, status: "used", reason: "Existing analysis housing-payment assumption." }], included: true, estimated: true }),
+    annualMiRate: calculationInput({ key: "annualMiRate", label: "Estimated annual MI rate", value: estimatedAnnualMiRate(normalized.loanAmount, ltv.result), unit: "annual_rate", evidenceSources: [{ extractedField: "configuredAssumption.annualMiRate", status: "used", reason: "Existing LTV-tier housing-payment assumption." }], included: true, estimated: true }),
+    hoa: calculationInput({ key: "hoa", label: "Monthly HOA", value: 0, unit: "monthly_currency", evidenceSources: [{ extractedField: "configuredAssumption.hoa", value: 0, status: "used", reason: "Existing analysis assumes no HOA when unavailable." }], included: true, estimated: true }),
+    context,
+  });
+  const monthlyIncomeInput = calculationInput({ key: "monthlyQualifyingIncome", label: "Monthly qualifying income", value: monthlyQualifyingIncome.result, unit: "monthly_currency", evidenceSources: monthlyQualifyingIncome.evidenceSources, included: monthlyQualifyingIncome.result !== null });
+  const pitiaInput = calculationInput({ key: "pitia", label: "PITIA", value: pitia.result, unit: "monthly_currency", evidenceSources: pitia.evidenceSources, included: pitia.result !== null, estimated: true });
+  const liabilitiesInput = calculationInput({ key: "monthlyLiabilities", label: "Monthly liabilities", value: monthlyLiabilities.result, unit: "monthly_currency", evidenceSources: monthlyLiabilities.evidenceSources, included: monthlyLiabilities.result !== null });
+  const housingRatio = calculateDebtToIncomeRatio({ calculationName: "Housing Ratio", monthlyIncome: monthlyIncomeInput, obligations: [pitiaInput], context });
+  const backEndDti = calculateDebtToIncomeRatio({ calculationName: "Back-End DTI", monthlyIncome: monthlyIncomeInput, obligations: [liabilitiesInput, pitiaInput], context });
+  const creditScores = collectMortgageCreditScores(docs);
+  const creditScoreSelection = selectRepresentativeCreditScore(
+    creditScores.map((score, index) => calculationInput({ key: `creditScore${index + 1}`, label: `Credit score ${index + 1}`, value: score, unit: "credit_score", evidenceSources: profileEvidenceSources(borrowerProfile.creditScore, "creditScore"), included: true })),
+    context
+  );
+  return { monthlyQualifyingIncome, monthlyLiabilities, pitia, housingRatio, backEndDti, ltv, creditScoreSelection };
+}
+
 export async function analyzeApplication(
   docs: ParsedAnalysisDoc[],
-  options?: {
-    applicationId?: string;
-    analysisVersion?: string;
-  }
+  options?: AnalyzeApplicationOptions
 ): Promise<AnalysisResult>;
 export async function analyzeApplication(
   docPath: string,
-  options?: {
-    applicationId?: string;
-    analysisVersion?: string;
-  }
+  options?: AnalyzeApplicationOptions
 ): Promise<AnalysisResult>;
 export async function analyzeApplication(
   input: ParsedAnalysisDoc[] | string,
-  options?: {
-    applicationId?: string;
-    analysisVersion?: string;
-  }
+  options?: AnalyzeApplicationOptions
 ): Promise<AnalysisResult> {
   const docs = typeof input === "string" ? await buildReplayDocsFromPath(input) : input;
   const orderedDocs = priorityDocs(docs);
@@ -4423,6 +4510,13 @@ export async function analyzeApplication(
   const normalized = buildNormalized(orderedDocs);
   const borrowerProfile = buildBorrowerProfile(normalized, orderedDocs, evidenceIndex);
   const conflicts = buildConflicts(borrowerProfile);
+  const analyzedAt = new Date().toISOString();
+  const calculations = buildCanonicalCalculationSet(normalized, borrowerProfile, orderedDocs, {
+    timestamp: analyzedAt,
+    programContext: options?.programContext ?? null,
+    overlayContext: options?.overlayContext ?? null,
+    confidenceSource: "input_completeness_and_evidence_provenance",
+  });
   const { conditions, factors } = buildConditionsAndFactors(normalized, borrowerProfile, conflicts, orderedDocs);
   const decision = computeDecision(normalized, conditions, orderedDocs);
   const authoritativeConditions = canonicalizeFinalConditions(applyHardStopConditionHierarchy(conditions, decision));
@@ -4443,7 +4537,7 @@ export async function analyzeApplication(
   return {
     applicationId: options?.applicationId,
     analysisVersion: options?.analysisVersion || "analysis_v1",
-    analyzedAt: new Date().toISOString(),
+    analyzedAt,
     docsAnalyzed: orderedDocs.map((d) => ({
       name: d.name,
       type: d.type,
@@ -4458,6 +4552,7 @@ export async function analyzeApplication(
     workflow,
     readiness,
     evidence,
+    calculations,
 
     // Legacy compatibility aliases used by report builders and regression scripts.
     // Canonical source remains finalDecision + normalized.

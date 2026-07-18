@@ -395,4 +395,5 @@ export type ApplicationAnalysisResult = {
   readiness?: ReadinessState;
 
   evidence: EvidenceReference[];
+  calculations?: import("@/lib/mortgage/canonicalCalculations").CanonicalCalculationSet;
 };

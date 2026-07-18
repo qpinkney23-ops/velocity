@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { fetchApplicationDetail } from "@/lib/applicationReadClient";
 import { useToast } from "@/components/ui/ToastProvider";
+import { calculateMonthlyQualifyingIncome, calculationInput } from "@/lib/mortgage/canonicalCalculations";
 
 type Underwriter = {
   id: string;
@@ -883,7 +884,11 @@ function getCanonicalWorkflowConditions(scanValue: ScanResult | null | undefined
 
 function buildDtiBreakdown(scanValue: ScanResult | null | undefined, borrowerProfileValue: BorrowerProfileFlat | null) {
   const annualIncome = toFiniteNumber(borrowerProfileValue?.income) ?? toFiniteNumber((scanValue as any)?.extracted?.income);
-  const monthlyIncome = annualIncome ? annualIncome / 12 : null;
+  const canonicalMonthlyIncome = toFiniteNumber((scanValue as any)?.calculations?.monthlyQualifyingIncome?.result);
+  const monthlyIncome = canonicalMonthlyIncome ?? calculateMonthlyQualifyingIncome(
+    calculationInput({ key: "annualIncome", label: "Annual qualifying income", value: annualIncome, unit: "annual_currency", evidenceSources: [], included: annualIncome !== null }),
+    { timestamp: "1970-01-01T00:00:00.000Z", programContext: null, overlayContext: null, confidenceSource: "display_fallback_input" }
+  ).result;
   const existingDebts = toFiniteNumber(borrowerProfileValue?.debts) ?? toFiniteNumber((scanValue as any)?.extracted?.debts);
   const proposedHousing = getProposedHousingPaymentValue(scanValue);
   const totalDti = getDisplayDtiValue(scanValue, borrowerProfileValue);

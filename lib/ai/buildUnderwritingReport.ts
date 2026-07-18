@@ -1,4 +1,9 @@
 import { AnalysisResult } from "./analyzeApplication";
+import {
+  calculateEstimatedPitia,
+  calculateLtv,
+  calculationInput,
+} from "@/lib/mortgage/canonicalCalculations";
 
 
 export type HousingPaymentBreakdown = {
@@ -201,11 +206,6 @@ function getProposedHousingPayment(analysis: AnalysisResult) {
 }
 
 
-function roundMoney(value: number | null): number | null {
-  if (typeof value !== "number" || !Number.isFinite(value)) return null;
-  return Math.round(value * 100) / 100;
-}
-
 function buildHousingPaymentBreakdown(
   analysis: AnalysisResult,
   loanAmount: number,
@@ -217,46 +217,36 @@ function buildHousingPaymentBreakdown(
   const estimatedTaxesRate = 0.018;
   const estimatedInsuranceAnnual = 1800;
 
-  const estimatedPi =
-    loanAmount > 0
-      ? (loanAmount * ((estimatedRate / 12) * Math.pow(1 + estimatedRate / 12, 360))) /
-        (Math.pow(1 + estimatedRate / 12, 360) - 1)
-      : 0;
-
-  const estimatedTaxes =
-    propertyValue > 0 ? (propertyValue * estimatedTaxesRate) / 12 : 0;
-
-  const estimatedInsurance = estimatedInsuranceAnnual / 12;
-
-  const ltv =
-    propertyValue > 0 && loanAmount > 0
-      ? loanAmount / propertyValue
-      : 0;
-
-  const estimatedMi =
-    ltv > 0.8 ? (loanAmount * 0.0085) / 12 : 0;
-
-  const estimatedHoa = 0;
-
-  const estimatedTotal =
-    estimatedPi +
-    estimatedTaxes +
-    estimatedInsurance +
-    estimatedMi +
-    estimatedHoa;
-
-  const finalTotal =
-    extractedHousingPayment && extractedHousingPayment > 0
-      ? extractedHousingPayment
-      : estimatedTotal;
+  const context = {
+    timestamp: analysis.analyzedAt || "1970-01-01T00:00:00.000Z",
+    programContext: analysis.calculations?.pitia.programContext ?? null,
+    overlayContext: analysis.calculations?.pitia.overlayContext ?? null,
+    confidenceSource: "report_input_completeness_and_analysis_provenance",
+  };
+  const loanAmountInput = calculationInput({ key: "loanAmount", label: "Loan amount", value: loanAmount, unit: "currency", evidenceSources: [], included: loanAmount > 0 });
+  const propertyValueInput = calculationInput({ key: "propertyValue", label: "Property value", value: propertyValue, unit: "currency", evidenceSources: [], included: propertyValue > 0 });
+  const ltvCalculation = calculateLtv(loanAmountInput, propertyValueInput, context);
+  const calculation = calculateEstimatedPitia({
+    loanAmount: loanAmountInput,
+    propertyValue: propertyValueInput,
+    ltv: calculationInput({ key: "ltv", label: "LTV", value: ltvCalculation.result, unit: "ratio", evidenceSources: ltvCalculation.evidenceSources, included: ltvCalculation.result !== null }),
+    annualInterestRate: calculationInput({ key: "annualInterestRate", label: "Estimated annual interest rate", value: estimatedRate, unit: "annual_rate", evidenceSources: [], included: true, estimated: true }),
+    termYears: calculationInput({ key: "termYears", label: "Amortization term", value: 30, unit: "years", evidenceSources: [], included: true, estimated: true }),
+    annualTaxRate: calculationInput({ key: "annualTaxRate", label: "Estimated annual tax rate", value: estimatedTaxesRate, unit: "annual_rate", evidenceSources: [], included: true, estimated: true }),
+    annualInsuranceAmount: calculationInput({ key: "annualInsuranceAmount", label: "Estimated annual insurance", value: estimatedInsuranceAnnual, unit: "annual_currency", evidenceSources: [], included: true, estimated: true }),
+    annualMiRate: calculationInput({ key: "annualMiRate", label: "Estimated annual MI rate", value: (ltvCalculation.result ?? 0) > 0.8 ? 0.0085 : 0, unit: "annual_rate", evidenceSources: [], included: true, estimated: true }),
+    hoa: calculationInput({ key: "hoa", label: "Monthly HOA", value: 0, unit: "monthly_currency", evidenceSources: [], included: true, estimated: true }),
+    authoritativeTotal: calculationInput({ key: "authoritativeTotal", label: "Extracted housing payment", value: extractedHousingPayment, unit: "monthly_currency", evidenceSources: analysis.calculations?.pitia.evidenceSources ?? [], included: extractedHousingPayment !== null && extractedHousingPayment > 0, estimated: false }),
+    context,
+  });
 
   return {
-    principalAndInterest: roundMoney(estimatedPi),
-    taxes: roundMoney(estimatedTaxes),
-    insurance: roundMoney(estimatedInsurance),
-    mortgageInsurance: roundMoney(estimatedMi),
-    hoa: roundMoney(estimatedHoa),
-    total: roundMoney(finalTotal),
+    principalAndInterest: calculation.components.principalAndInterest,
+    taxes: calculation.components.taxes,
+    insurance: calculation.components.insurance,
+    mortgageInsurance: calculation.components.mortgageInsurance,
+    hoa: calculation.components.hoa,
+    total: calculation.result,
     estimatedRate,
     assumptionSource:
       extractedHousingPayment && extractedHousingPayment > 0
