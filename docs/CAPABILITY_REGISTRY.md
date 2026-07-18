@@ -6,6 +6,8 @@ Registry size estimate: **39 major capabilities**. These are planning units; imp
 
 This registry is dependency-ordered. IDs are permanent and are never renumbered or reused. Status values are `Partial` or `Planned`; nothing in this registry is `LOCKED`. Mortgage-policy behavior requires approved rules or authoritative sources and is never inferred from this plan.
 
+Underwriting capabilities and lock claims must also satisfy [the Elite Underwriting Intelligence Standard](./ELITE_UNDERWRITING_INTELLIGENCE_STANDARD.md). Its doctrine adds no mortgage policy and does not change the statuses below. Architecture or file existence alone cannot establish elite quality; production-path evidence, calculation and rule traceability, representative gold-file results, calibrated confidence where applicable, and required mortgage-SME acceptance are necessary.
+
 ---
 
 ## CORE-001 — Canonical Enterprise Data Contracts
@@ -1034,6 +1036,8 @@ Notes: This capability also remains unlocked until execution is complete.
 ---
 
 ## Critical Path
+
+After the current security phase, the first underwriting-quality implementation bundle is **Canonical Mortgage Mathematics and Provenance**, aligned to `CORE-001`, `TRUST-001`, `UW-001`, `UW-002`, and `QA-002`. It must establish bounded supported calculations, named formulas, authoritative inputs, units, explicit precision/rounding boundaries, evidence lineage, versioned results, and SME-approved gold fixtures before broader rule or product expansion. The subsequent doctrine sequence is maintained in [the Elite Underwriting Intelligence Standard](./ELITE_UNDERWRITING_INTELLIGENCE_STANDARD.md).
 
 `CORE-001` → `CORE-002` → `SEC-001` → `SEC-002` → `TRUST-001` → `AUDIT-001` → `OCR-001` → `UW-001` → `UW-002` → `UW-003` → `TRUST-003` → `REPORT-001` → `QA-001` → `QA-002` → `OPS-001` → `OPS-002` → `RELEASE-001` → `RELEASE-002` → `RELEASE-003`.
 

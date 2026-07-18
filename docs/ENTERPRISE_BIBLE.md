@@ -35,6 +35,8 @@ Current rules are not enterprise-isolated: any signed-in user can read/write app
 
 ## Underwriting pipeline
 
+All underwriting-intelligence architecture is governed by [the Elite Underwriting Intelligence Standard](./ELITE_UNDERWRITING_INTELLIGENCE_STANDARD.md). The target is an evidence-backed, mathematically reproducible, program/overlay-aware, explainable second set of eyes—not autonomous underwriting authority. The standard's current-state assessment is controlling for quality claims: substantial deterministic foundations do not establish elite capability while production paths, policy governance, traceability, calibration, and expert benchmark evidence remain incomplete.
+
 The deterministic engine:
 
 1. Prioritizes document types and attaches evidence references.

@@ -130,12 +130,17 @@ Complexity without customer value is rejected.
 20. **Enterprise V1 has a finish line.**
     Enterprise V1 is complete when Velocity can securely, reproducibly, and explainably process supported mortgage files through intake, analysis, conditions, workflow, reporting, audit, and integration-ready outputs under defined production and operational controls.
 
+21. **Underwriting intelligence must meet the elite standard.**
+    [The Elite Underwriting Intelligence Standard](./ELITE_UNDERWRITING_INTELLIGENCE_STANDARD.md) is canonical product doctrine. Mathematical correctness, evidence and rule traceability, explainability, lawful and non-discriminatory use, and a maintainable program/overlay hierarchy are non-negotiable. Velocity may not present generic or unsupported analysis as underwriting intelligence, exercise autonomous final lending authority, or add intelligence features without measurable operational value.
+
 ## Product invariants
 
 * No approval without an authorized and attributable human decision where required.
 * A hard stop cannot be weakened through merging, formatting, persistence, UI presentation, report generation, export, or integration.
 * Missing evidence cannot become a favorable verified value.
 * DTI, LTV, income, credit, liabilities, assets, reserves, and PITIA retain their inputs, sources, calculations, assumptions, and versions.
+* Supported mortgage calculations use named formulas, explicit units and rounding boundaries, governed program/overlay context, and reproducible authoritative results.
+* Velocity does not infer protected or irrelevant personal characteristics, use demographic proxies, or manufacture speculative predictors for underwriting.
 * Derived values must be identified as derived and must not falsely claim a single document as their complete source.
 * Automation does not silently overwrite verified data, manual conditions, human decisions, exceptions, overrides, or clearance history.
 * The canonical persisted condition set drives workflow gates, readiness, condition views, reports, and exports.

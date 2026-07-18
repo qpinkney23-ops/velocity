@@ -93,3 +93,9 @@ Add SSO/SCIM/MFA, retention/audit export, backup/DR, SLOs, incident processes, t
 ## Guardrail
 
 Do not prioritize feature breadth ahead of Phases 1 and 2. Security isolation and a single reproducible underwriting truth are more valuable than additional screens or another analysis path.
+
+## Underwriting-quality sequence after the security phase
+
+[The Elite Underwriting Intelligence Standard](./ELITE_UNDERWRITING_INTELLIGENCE_STANDARD.md) governs the acceptance bar and detailed sequence. After the current security phase is genuinely complete, the exact next underwriting-quality bundle is **Canonical Mortgage Mathematics and Provenance**: define a bounded supported calculation set, named formulas, authoritative inputs, units, precision and rounding boundaries, evidence lineage, governed inclusion/exclusion reasoning, versioned results, and mortgage-SME-approved gold fixtures.
+
+Subsequent bundles proceed through evidence normalization, guideline/program hierarchy, overlay governance, rule traceability, elite conditions, confidence calibration, cross-document reasoning, controlled scenario analysis, and expert-reviewed gold-standard evaluation. Expansion to every product, a new analysis path, opaque scoring, or speculative prediction must not displace these controls.

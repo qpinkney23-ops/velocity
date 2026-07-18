@@ -12,6 +12,9 @@
 8. Prioritize deterministic, explicit, testable behavior over cleverness or generative inference.
 9. Fail closed when evidence, configuration, parsing, authentication, or authorization is missing. Never turn uncertainty into approval.
 10. Preserve evidence lineage, conflicts, assumption labels, confidence, and hard-stop severity end to end.
+10a. Before changing underwriting extraction, calculations, ratios, scoring, program or overlay behavior, conditions, evidence, confidence, risk, readiness, scenarios, decisions, or reports, read and comply with [the Elite Underwriting Intelligence Standard](./ELITE_UNDERWRITING_INTELLIGENCE_STANDARD.md).
+10b. Do not describe a capability as elite without production-path evidence, approved rule sources, representative benchmark results, and required mortgage-SME acceptance. Keep extraction confidence, completeness, consistency, program fit, readiness, and risk conceptually separate.
+10c. Never introduce prohibited inference, protected-class or proxy scoring, speculative borrower-behavior prediction, autonomous final lending authority, or a generic unsupported “AI score.”
 
 ## Quality and regression control
 
