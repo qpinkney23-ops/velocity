@@ -178,13 +178,6 @@ async function releaseLease(ref: any, admin: any, reason: "success" | "failed" |
   });
 }
 
-export async function GET() {
-  return NextResponse.json(
-    { ok: true, route: "/api/worker/files/process", note: "POST processes (claims) 1 parsing job with a lease." },
-    { status: 200 }
-  );
-}
-
 export async function POST(req: Request) {
   try {
     const service = await authorizeProductionWorker(req, "files_worker");

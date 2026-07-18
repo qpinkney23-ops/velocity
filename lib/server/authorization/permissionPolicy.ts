@@ -1,9 +1,9 @@
 import { AUTHORIZATION_CONSTRAINTS, AUTHORIZATION_DECISION_V1, AUTHORIZATION_DENIAL_REASONS, AUTHORIZATION_PERMISSION_VERSION, AUTHORIZATION_PERMISSIONS, AUTHORIZATION_POLICY_VERSION, AUTHORIZATION_RESOURCE_TYPES, parseAuthorizationContext, parseAuthorizationDecision, type AnyAuthorizationContextV1, type AuthorizationConstraint, type AuthorizationDecisionV1, type AuthorizationDenialReason, type AuthorizationPermission, type AuthorizationResourceType, type ConstraintEvaluation } from "../../contracts/authorization";
 import type { TenantRole } from "../../contracts/tenantSystem";
 
-export const PROVISIONAL_ROLE_PERMISSION_MATRIX = Object.freeze({
+export const ROLE_PERMISSION_MATRIX = Object.freeze({
   version: AUTHORIZATION_PERMISSION_VERSION,
-  status: "provisional_product_review_required" as const,
+  status: "locked_for_supported_sec_002_surfaces" as const,
   roles: Object.freeze({
     owner: Object.freeze(["evidence.read", "evidence.review", "evidence.verify", "evidence.dispute", "evidence.revoke", "application.read", "application.create", "application.update", "application.analyze", "application.delete", "document.read", "document.upload", "document.delete", "condition.read", "condition.manage", "condition.clear", "assignment.read", "assignment.manage", "decision.read", "report.generate", "report.read", "export.generate", "queue.read", "queue.manage", "tenant.read", "tenant.manage", "membership.read", "membership.invite", "membership.manage", "configuration.read", "configuration.manage", "billing.read", "billing.manage", "audit.read", "audit.export"] as const),
     admin: Object.freeze(["application.read", "application.create", "application.update", "application.analyze", "document.read", "document.upload", "document.delete", "condition.read", "condition.manage", "condition.clear", "assignment.read", "assignment.manage", "decision.read", "report.generate", "report.read", "export.generate", "queue.read", "queue.manage", "tenant.read", "membership.read", "membership.invite", "membership.manage", "configuration.read", "configuration.manage", "billing.read", "audit.read"] as const),
@@ -15,7 +15,10 @@ export const PROVISIONAL_ROLE_PERMISSION_MATRIX = Object.freeze({
   }),
 });
 
-export function permissionsForRole(role: TenantRole): readonly AuthorizationPermission[] { return Object.freeze([...(PROVISIONAL_ROLE_PERMISSION_MATRIX.roles[role] || [])]) as readonly AuthorizationPermission[]; }
+/** Compatibility alias for callers compiled against the SEC-002 provisional symbol. */
+export const PROVISIONAL_ROLE_PERMISSION_MATRIX = ROLE_PERMISSION_MATRIX;
+
+export function permissionsForRole(role: TenantRole): readonly AuthorizationPermission[] { return Object.freeze([...(ROLE_PERMISSION_MATRIX.roles[role] || [])]) as readonly AuthorizationPermission[]; }
 
 export type AuthorizationPolicyV1 = Readonly<{ policyVersion: typeof AUTHORIZATION_POLICY_VERSION; permission: AuthorizationPermission; resourceType: AuthorizationResourceType; requiredConstraints: readonly AuthorizationConstraint[]; auditAction: string }>;
 export type AuthorizationResourceFactsV1 = Readonly<{ tenantId?: string; ownershipState: "tenant_owned" | "unresolved_legacy" | "not_applicable"; branchId?: string; teamId?: string; assignedUserId?: string; assignedTeamId?: string; creatorId?: string }>;

@@ -6,8 +6,8 @@ export const AUTHORIZATION_CONTEXT_V1 = "authorization-context.v1" as SchemaVers
 export const AUTHORIZATION_DECISION_V1 = "authorization-decision.v1" as SchemaVersion;
 export const AUTHORIZATION_REQUEST_V1 = "authorization-request.v1" as SchemaVersion;
 export const RESOLVED_RESOURCE_FACTS_V1 = "resolved-resource-facts.v1" as SchemaVersion;
-export const AUTHORIZATION_POLICY_VERSION = "authorization-policy.provisional.v1";
-export const AUTHORIZATION_PERMISSION_VERSION = "authorization-permissions.provisional.v1";
+export const AUTHORIZATION_POLICY_VERSION = "authorization-policy.v1";
+export const AUTHORIZATION_PERMISSION_VERSION = "authorization-permissions.v1";
 
 export const AUTHORIZATION_PERMISSIONS = [
   "application.read", "application.create", "application.update", "application.analyze", "application.delete",

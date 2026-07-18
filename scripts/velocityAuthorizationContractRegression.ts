@@ -49,7 +49,7 @@ test("no production imports", () => {
     'import { resolveApplicationDocumentResourceFactsCore } from "../../lib/server/authorization/applicationDocumentResourceResolverCore";',
   ]) assert(importSpecifiers(synthetic).some(forbiddenDocumentResolverImport), "synthetic client/page/route resolver import was not rejected");
 });
-test("matrix is provisional and complete by role", () => { assert(PROVISIONAL_ROLE_PERMISSION_MATRIX.status === "provisional_product_review_required" && Object.keys(PROVISIONAL_ROLE_PERMISSION_MATRIX.roles).sort().join(",") === ["admin", "loan_officer", "owner", "processor", "service_account", "underwriter", "unknown", "viewer"].sort().join(","), "provisional matrix vocabulary changed"); });
+test("matrix is locked and complete by role", () => { assert(PROVISIONAL_ROLE_PERMISSION_MATRIX.status === "locked_for_supported_sec_002_surfaces" && Object.keys(PROVISIONAL_ROLE_PERMISSION_MATRIX.roles).sort().join(",") === ["admin", "loan_officer", "owner", "processor", "service_account", "underwriter", "unknown", "viewer"].sort().join(","), "locked matrix vocabulary changed"); });
 
 let passed = 0; for (const [name, run] of tests) { try { run(); passed += 1; console.log(`PASS: ${name}`); } catch (error) { console.error(`FAIL: ${name}: ${error instanceof Error ? error.message : String(error)}`); } }
 console.log(`Authorization contract regression result: ${passed}/${tests.length} passed`); if (passed !== tests.length) process.exitCode = 1;
