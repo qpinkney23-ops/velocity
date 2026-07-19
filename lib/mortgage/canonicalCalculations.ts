@@ -216,10 +216,15 @@ export function calculateDebtToIncomeRatio(args: {
   obligations: CalculationInput[];
   context: CalculationContext;
 }): CanonicalCalculation {
-  const included = args.obligations.filter((input) => input.included && input.value !== null);
+  const included = args.obligations.filter(
+    (input) => input.included && !input.missing && input.value !== null && Number.isFinite(input.value)
+  );
   const obligations = included.reduce((sum, input) => sum + (input.value ?? 0), 0);
   const validIncome = args.monthlyIncome.value !== null && args.monthlyIncome.value > 0;
-  const result = validIncome && obligations > 0 ? roundRatio(obligations / (args.monthlyIncome.value as number)) : null;
+  const hasKnownObligationSet = included.length > 0;
+  const result = validIncome && hasKnownObligationSet && obligations >= 0
+    ? roundRatio(obligations / (args.monthlyIncome.value as number))
+    : null;
   const formulaName = args.calculationName === "Housing Ratio" ? "monthly_pitia_divided_by_monthly_qualifying_income" : args.calculationName === "Back-End DTI" ? "total_monthly_obligations_divided_by_monthly_qualifying_income" : "monthly_liabilities_divided_by_monthly_qualifying_income";
   return buildCalculation({
     calculationName: args.calculationName,
@@ -228,11 +233,25 @@ export function calculateDebtToIncomeRatio(args: {
     inputs: [args.monthlyIncome, ...args.obligations],
     units: "ratio",
     inclusionRules: ["Use positive monthly qualifying income and included monthly obligations."],
-    exclusionRules: ["Return missing when income is absent/non-positive or no positive obligation is available."],
+    exclusionRules: ["Return missing when income is absent/non-positive or no known obligation value is available; preserve a known zero obligation as a 0% ratio."],
     result,
     context: args.context,
     summary: result === null ? `${args.calculationName} is unavailable.` : `${args.calculationName} is ${ratioToDisplayPercent(result)}%.`,
   });
+}
+
+export function selectRepresentativeCreditScoreValue(values: Array<number | null | undefined>): number | null {
+  const scores = values
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+    .filter((value) => value >= 300 && value <= 850)
+    .map((value) => Math.round(value))
+    .sort((a, b) => a - b);
+
+  return scores.length >= 3
+    ? scores[Math.floor(scores.length / 2)]
+    : scores.length === 2
+    ? scores[0]
+    : scores[0] ?? null;
 }
 
 export function calculateLtv(loanAmount: CalculationInput, propertyValue: CalculationInput, context: CalculationContext): CanonicalCalculation {
@@ -252,16 +271,17 @@ export function calculateLtv(loanAmount: CalculationInput, propertyValue: Calcul
 }
 
 export function selectRepresentativeCreditScore(scoreInputs: CalculationInput[], context: CalculationContext): CanonicalCalculation {
-  const scores = Array.from(new Set(scoreInputs.filter((input) => input.included && input.value !== null && input.value >= 300 && input.value <= 850).map((input) => Math.round(input.value as number)))).sort((a, b) => a - b);
-  const result = scores.length >= 3 ? scores[Math.floor(scores.length / 2)] : scores.length === 2 ? Math.min(...scores) : scores[0] ?? null;
+  const result = selectRepresentativeCreditScoreValue(
+    scoreInputs.filter((input) => input.included && !input.missing).map((input) => input.value)
+  );
   return buildCalculation({
     calculationName: "Credit Score Selection",
     formulaName: "representative_mortgage_credit_score_selection",
-    formula: "middle sorted unique score when 3+; lower score when 2; available score when 1",
+    formula: "middle sorted score when 3+; lower score when 2; available score when 1",
     inputs: scoreInputs,
     units: "credit_score",
-    inclusionRules: ["Include unique integer scores from 300 through 850 selected by existing document parsing rules."],
-    exclusionRules: ["Exclude missing, duplicate, non-finite, and out-of-range values."],
+    inclusionRules: ["Include integer bureau scores from 300 through 850 selected by existing document parsing rules; equal scores from different bureaus remain distinct observations."],
+    exclusionRules: ["Exclude missing, non-finite, and out-of-range values."],
     result,
     context,
     summary: result === null ? "Representative credit score is unavailable." : `Representative credit score is ${result}.`,

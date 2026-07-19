@@ -1,4 +1,5 @@
 import pdf from "pdf-parse";
+import { selectRepresentativeCreditScoreValue } from "./mortgage/canonicalCalculations";
 
 type ParsedLiability = {
   creditor: string;
@@ -503,15 +504,13 @@ function pickEmployerAddress(text: string) {
 function pickCreditScore(text: string) {
   const cleaned = cleanSpaces(text);
 
-  const strictPatterns = [
+  const explicitRepresentativePatterns = [
     /representative\s*score[^0-9]{0,40}(\d{3})/i,
     /middle\s*score[^0-9]{0,40}(\d{3})/i,
     /borrower\s*middle\s*score[^0-9]{0,40}(\d{3})/i,
-    /credit\s*score[^0-9]{0,40}(\d{3})/i,
-    /score[^0-9]{0,20}(\d{3})/i,
   ];
 
-  for (const pattern of strictPatterns) {
+  for (const pattern of explicitRepresentativePatterns) {
     const m = cleaned.match(pattern);
     if (!m) continue;
 
@@ -525,10 +524,7 @@ function pickCreditScore(text: string) {
       (n) => n >= 300 && n <= 850
     );
 
-    if (nums.length === 3) {
-      nums.sort((a, b) => a - b);
-      return nums[1];
-    }
+    if (nums.length === 3) return selectRepresentativeCreditScoreValue(nums);
   }
 
   const bureauScores = Array.from(
@@ -537,12 +533,24 @@ function pickCreditScore(text: string) {
     .map((m) => Number(m[1]))
     .filter((n) => n >= 300 && n <= 850);
 
-  if (bureauScores.length >= 3) {
-    bureauScores.sort((a, b) => a - b);
-    return bureauScores[1];
+  if (bureauScores.length >= 2) {
+    return selectRepresentativeCreditScoreValue(bureauScores);
   }
 
-  if (bureauScores.length === 1) return bureauScores[0];
+  if (bureauScores.length === 1) return selectRepresentativeCreditScoreValue(bureauScores);
+
+  const genericPatterns = [
+    /credit\s*score[^0-9]{0,40}(\d{3})/i,
+    /score[^0-9]{0,20}(\d{3})/i,
+  ];
+
+  for (const pattern of genericPatterns) {
+    const m = cleaned.match(pattern);
+    if (!m) continue;
+
+    const n = Number(m[1]);
+    if (n >= 300 && n <= 850) return n;
+  }
 
   return null;
 }

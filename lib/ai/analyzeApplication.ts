@@ -306,10 +306,12 @@ function bestNumericByDocPriority(
   opts?: {
     min?: number;
     max?: number;
+    allowZero?: boolean;
   }
 ): number | null {
   for (const doc of docs) {
-    const n = safePositive(getter(doc));
+    const raw = safeNumber(getter(doc));
+    const n = opts?.allowZero && raw === 0 ? 0 : safePositive(raw);
     if (n === null) continue;
     if (typeof opts?.min === "number" && n < opts.min) continue;
     if (typeof opts?.max === "number" && n > opts.max) continue;
@@ -973,6 +975,14 @@ function uniqueSortedCreditScores(values: Array<number | null | undefined>) {
   ).sort((a, b) => a - b);
 }
 
+function sortedCreditScores(values: Array<number | null | undefined>) {
+  return values
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+    .filter((value) => value >= 300 && value <= 850)
+    .map((value) => Math.round(value))
+    .sort((a, b) => a - b);
+}
+
 function extractCreditScoresFromText(text: string) {
   const clean = cleanSpaces(text || "");
   const scores: number[] = [];
@@ -985,6 +995,22 @@ function extractCreditScoresFromText(text: string) {
   const sectionsToScan = explicitScoreSection ? [explicitScoreSection] : [clean.slice(0, 900)];
 
   for (const section of sectionsToScan) {
+    const triMerge = section.match(/scores?\s*[:\-]?\s*(\d{3})\s*\/\s*(\d{3})\s*\/\s*(\d{3})/i);
+    if (triMerge) {
+      const triMergeScores = sortedCreditScores([Number(triMerge[1]), Number(triMerge[2]), Number(triMerge[3])]);
+      if (triMergeScores.length === 3) return triMergeScores;
+    }
+
+    const experian = section.match(/\b(?:experian|exp)\D{0,20}([3-8]\d{2})\b/i);
+    const equifax = section.match(/\b(?:equifax|eqf)\D{0,20}([3-8]\d{2})\b/i);
+    const transunion = section.match(/\b(?:transunion|trans\s*union|tu)\D{0,20}([3-8]\d{2})\b/i);
+    const bureauScores = sortedCreditScores([
+      experian?.[1] ? Number(experian[1]) : null,
+      equifax?.[1] ? Number(equifax[1]) : null,
+      transunion?.[1] ? Number(transunion[1]) : null,
+    ]);
+    if (bureauScores.length === 3) return bureauScores;
+
     const labeledPatterns = [
       /\b(?:experian|exp)\D{0,20}([3-8]\d{2})\b/gi,
       /\b(?:equifax|eqf)\D{0,20}([3-8]\d{2})\b/gi,
@@ -1038,16 +1064,16 @@ function collectMortgageCreditScores(docs: ParsedAnalysisDoc[]) {
 
   for (const doc of docsToInspect) {
     const extractedScore = safePositive(doc.extracted.creditScore);
-    if (extractedScore !== null && extractedScore >= 300 && extractedScore <= 850) {
-      scores.push(extractedScore);
-    }
-
-    for (const score of extractCreditScoresFromText(doc.text || "")) {
+    const textScores = extractCreditScoresFromText(doc.text || "");
+    for (const score of textScores) {
       scores.push(score);
+    }
+    if (!textScores.length && extractedScore !== null && extractedScore >= 300 && extractedScore <= 850) {
+      scores.push(extractedScore);
     }
   }
 
-  return uniqueSortedCreditScores(scores);
+  return sortedCreditScores(scores);
 }
 
 function pickMortgageRepresentativeCreditScore(docs: ParsedAnalysisDoc[]) {
@@ -1479,9 +1505,12 @@ function computeDTIConfidence(
   borrowerProfile: BorrowerProfile,
   debts: number | null
 ): "none" | "low" | "medium" | "high" {
-  if (!debts) return "none";
+  if (debts === null) return "none";
 
-  const debtDocs = docs.filter((doc) => safePositive(doc.extracted.debts) !== null);
+  const debtDocs = docs.filter((doc) => {
+    const value = safeNumber(doc.extracted.debts);
+    return value !== null && value >= 0;
+  });
   const creditDebtDocs = debtDocs.filter((doc) => doc.type === "credit");
   const totalDebtDocs = debtDocs.length;
   const debtEvidenceRefs = borrowerProfile.debts.evidenceRefs.length;
@@ -1516,7 +1545,10 @@ function buildDTIExplanation(
       ? `$${normalized.income.toLocaleString()} annual income`
       : "normalized income";
 
-  const debtDocs = docs.filter((doc) => safePositive(doc.extracted.debts) !== null);
+  const debtDocs = docs.filter((doc) => {
+    const value = safeNumber(doc.extracted.debts);
+    return value !== null && value >= 0;
+  });
   const creditDebtDocs = debtDocs.filter((doc) => doc.type === "credit");
   const winningSource = borrowerProfile.debts.winningSource;
   const sourceDocName = winningSource?.docName || creditDebtDocs[0]?.name || debtDocs[0]?.name || "";
@@ -1748,7 +1780,7 @@ function buildNormalized(docs: ParsedAnalysisDoc[]): NormalizedMetrics {
     bestNumericByDocPriority(
       debtsDocs,
       (d) => d.extracted.debts,
-      { min: 1 }
+      { min: 0, allowZero: true }
     );
   const liabilityDetails = liabilityDecision.liabilities;
   const dti = computeDTI(income, debts);
@@ -3218,7 +3250,7 @@ function buildConditionsAndFactors(
     key: "dti_action_engine",
     label: "DTI Action Engine",
     value: normalized.dti ?? null,
-    impact: normalized.dti !== null && normalized.dti !== undefined && normalized.dti > 50 ? "negative" : "neutral",
+    impact: normalized.dti !== null && normalized.dti !== undefined && normalized.dti > 0.5 ? "negative" : "neutral",
     summary: dtiActionPlanSummary,
     source: "derived" as any,
     confidence: 0.82,
