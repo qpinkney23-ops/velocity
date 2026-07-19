@@ -19,6 +19,7 @@ import {
 } from "@/lib/ai/applicationAnalysisSchema";
 import {
   calculateDebtToIncomeRatio,
+  calculateCanonicalUnderwritingRatios,
   calculateEstimatedPitia,
   calculateLtv,
   calculateMonthlyLiabilities,
@@ -40,6 +41,10 @@ export type AnalysisResult = Omit<ApplicationAnalysisResult, "conditions"> & {
   score: number;
   confidence: number;
   reason: string;
+  consumerDebtRatio: number | null;
+  housingRatio: number | null;
+  backEndDti: number | null;
+  /** @deprecated Compatibility alias for consumerDebtRatio. */
   dti: number | null;
   ltv: number | null;
   redFlags: string[];
@@ -948,14 +953,6 @@ function buildDtiActionPlanSummary(normalized: any, liabilityItems: any[]) {
 }
 
 
-function computeDTI(income: number | null, debts: number | null) {
-  return calculateDebtToIncomeRatio({
-    calculationName: "Consumer Debt Ratio",
-    monthlyIncome: numericCalculationInput("monthlyIncome", "Monthly qualifying income", monthlyIncomeValue(income), "monthly_currency"),
-    obligations: [numericCalculationInput("monthlyLiabilities", "Monthly liabilities", debts, "monthly_currency")],
-    context: INTERNAL_CALCULATION_CONTEXT,
-  }).result;
-}
 function computeLTV(loanAmount: number | null, propertyValue: number | null) {
   return calculateLtv(
     numericCalculationInput("loanAmount", "Loan amount", loanAmount, "currency"),
@@ -1127,19 +1124,6 @@ function estimateProposedHousingPayment(args: {
   };
 }
 
-function computeTotalDTI(
-  income: number | null,
-  debts: number | null,
-  proposedHousingPayment: number | null
-) {
-  return calculateDebtToIncomeRatio({
-    calculationName: "Back-End DTI",
-    monthlyIncome: numericCalculationInput("monthlyIncome", "Monthly qualifying income", monthlyIncomeValue(income), "monthly_currency"),
-    obligations: [numericCalculationInput("monthlyLiabilities", "Monthly liabilities", debts ?? 0, "monthly_currency"), numericCalculationInput("pitia", "PITIA", proposedHousingPayment ?? 0, "monthly_currency")],
-    context: INTERNAL_CALCULATION_CONTEXT,
-  }).result;
-}
-
 type CompensatingFactorResult = {
   label: string;
   strength: "strong" | "moderate" | "weak";
@@ -1155,14 +1139,8 @@ function compensatingFactorWeight(strength: CompensatingFactorResult["strength"]
 function buildCompensatingFactors(normalized: NormalizedMetrics, docs: ParsedAnalysisDoc[]) {
   const factors: CompensatingFactorResult[] = [];
   const riskFlags: CompensatingFactorResult[] = [];
-
-  const proposedHousing = estimateProposedHousingPayment({
-    loanAmount: normalized.loanAmount,
-    propertyValue: normalized.propertyValue,
-    ltv: normalized.ltv,
-  });
-  const totalDti = computeTotalDTI(normalized.income, normalized.debts, proposedHousing?.total ?? null);
-  const consumerDebtRatio = computeConsumerDebtRatio(normalized.income, normalized.debts);
+  const totalDti = normalized.backEndDti;
+  const consumerDebtRatio = normalized.consumerDebtRatio;
   const monthlyIncome = monthlyIncomeValue(normalized.income);
 
   if (normalized.creditScore !== null) {
@@ -1315,10 +1293,6 @@ function buildCompensatingFactors(normalized: NormalizedMetrics, docs: ParsedAna
     totalDti,
     monthlyIncome,
   };
-}
-
-function computeConsumerDebtRatio(income: number | null, debts: number | null) {
-  return computeDTI(income, debts);
 }
 
 function extractDocYears(text: string) {
@@ -1533,9 +1507,9 @@ function buildDTIExplanation(
   normalized: NormalizedMetrics,
   dtiConfidence: "none" | "low" | "medium" | "high"
 ): string {
-  if (normalized.dti === null) return "Consumer debt ratio unavailable.";
+  if (normalized.consumerDebtRatio === null) return "Consumer debt ratio unavailable.";
 
-  const pct = (normalized.dti * 100).toFixed(2);
+  const pct = (normalized.consumerDebtRatio * 100).toFixed(2);
   const debtAmount =
     typeof normalized.debts === "number" && Number.isFinite(normalized.debts)
       ? `$${normalized.debts.toLocaleString()}`
@@ -1783,7 +1757,6 @@ function buildNormalized(docs: ParsedAnalysisDoc[]): NormalizedMetrics {
       { min: 0, allowZero: true }
     );
   const liabilityDetails = liabilityDecision.liabilities;
-  const dti = computeDTI(income, debts);
   const ltv = computeLTV(loanAmount, propertyValue);
   return {
     borrower,
@@ -1801,7 +1774,10 @@ function buildNormalized(docs: ParsedAnalysisDoc[]): NormalizedMetrics {
     assets,
     debts,
     liabilityDetails,
-    dti,
+    consumerDebtRatio: null,
+    housingRatio: null,
+    backEndDti: null,
+    dti: null,
     ltv,
   };
 }
@@ -3011,7 +2987,7 @@ function buildConditionsAndFactors(
 
   const dtiConfidence = computeDTIConfidence(docs, borrowerProfile, normalized.debts);
 
-  if (normalized.dti === null) {
+  if (normalized.consumerDebtRatio === null) {
     addCondition(
       conditions,
       "Liability Review — confirm all monthly debts used for DTI",
@@ -3029,37 +3005,37 @@ function buildConditionsAndFactors(
       source: "derived" as any,
       evidenceRefs: borrowerProfile.debts.evidenceRefs,
     });
-  } else if (normalized.dti > 0.65) {
+  } else if (normalized.consumerDebtRatio > 0.65) {
     addCondition(
       conditions,
       "DTI Hard Stop",
       "high",
       "debts",
-      `DTI = ${(normalized.dti * 100).toFixed(2)}% (${dtiConfidence} confidence).`,
+      `DTI = ${(normalized.consumerDebtRatio * 100).toFixed(2)}% (${dtiConfidence} confidence).`,
       borrowerProfile.debts.evidenceRefs
     );
     factors.push({
       key: "dti",
       label: "Consumer Debt Ratio (Pre-Housing)",
-      value: normalized.dti,
+      value: normalized.consumerDebtRatio,
       impact: "negative",
       summary: `${buildDTIExplanation(docs, borrowerProfile, normalized, dtiConfidence)} This consumer ratio is elevated before housing and must be considered alongside Total DTI.`,
       source: "derived" as any,
       evidenceRefs: borrowerProfile.debts.evidenceRefs,
     });
-  } else if (normalized.dti > 0.5) {
+  } else if (normalized.consumerDebtRatio > 0.5) {
     addCondition(
       conditions,
       "Capacity Review — document DTI support and compensating factors",
       "med",
       "debts",
-      `DTI = ${(normalized.dti * 100).toFixed(2)}% (${dtiConfidence} confidence).`,
+      `DTI = ${(normalized.consumerDebtRatio * 100).toFixed(2)}% (${dtiConfidence} confidence).`,
       borrowerProfile.debts.evidenceRefs
     );
     factors.push({
       key: "dti",
       label: "Consumer Debt Ratio (Pre-Housing)",
-      value: normalized.dti,
+      value: normalized.consumerDebtRatio,
       impact: "neutral",
       summary: `${buildDTIExplanation(docs, borrowerProfile, normalized, dtiConfidence)} This consumer ratio is elevated before housing and must be considered alongside Total DTI.`,
       source: "derived" as any,
@@ -3072,7 +3048,7 @@ function buildConditionsAndFactors(
         "Liability Review — confirm all monthly debts used for DTI",
         "med",
         "debts",
-        `DTI = ${(normalized.dti * 100).toFixed(2)}%, but debt extraction confidence is low.`,
+        `DTI = ${(normalized.consumerDebtRatio * 100).toFixed(2)}%, but debt extraction confidence is low.`,
         borrowerProfile.debts.evidenceRefs
       );
     }
@@ -3080,7 +3056,7 @@ function buildConditionsAndFactors(
     factors.push({
       key: "dti",
       label: "Consumer Debt Ratio (Pre-Housing)",
-      value: normalized.dti,
+      value: normalized.consumerDebtRatio,
       impact: "positive",
       summary: buildDTIExplanation(docs, borrowerProfile, normalized, dtiConfidence),
       source: "derived" as any,
@@ -3105,12 +3081,8 @@ function buildConditionsAndFactors(
     ltv: normalized.ltv,
   });
 
-  const consumerDebtRatio = computeConsumerDebtRatio(normalized.income, normalized.debts);
-  const totalDti = computeTotalDTI(
-    normalized.income,
-    normalized.debts,
-    proposedHousing?.total ?? null
-  );
+  const consumerDebtRatio = normalized.consumerDebtRatio;
+  const totalDti = normalized.backEndDti;
 
   if (totalDti === null) {
     addCondition(
@@ -3249,8 +3221,8 @@ function buildConditionsAndFactors(
   factors.push({
     key: "dti_action_engine",
     label: "DTI Action Engine",
-    value: normalized.dti ?? null,
-    impact: normalized.dti !== null && normalized.dti !== undefined && normalized.dti > 0.5 ? "negative" : "neutral",
+    value: normalized.consumerDebtRatio ?? null,
+    impact: normalized.consumerDebtRatio !== null && normalized.consumerDebtRatio > 0.5 ? "negative" : "neutral",
     summary: dtiActionPlanSummary,
     source: "derived" as any,
     confidence: 0.82,
@@ -3493,44 +3465,44 @@ function buildConditionsAndFactors(
     });
   }
 
-  if (normalized.dti !== null) {
-    if (normalized.dti > 0.8) {
+  if (normalized.consumerDebtRatio !== null) {
+    if (normalized.consumerDebtRatio > 0.8) {
       addCondition(
         conditions,
         "Liability Review — validate unusually high DTI inputs",
         "high",
         "debts",
-        `DTI = ${(normalized.dti * 100).toFixed(2)}% appears inflated and should be checked against credit-report monthly payment fields before final decisioning.`,
+        `DTI = ${(normalized.consumerDebtRatio * 100).toFixed(2)}% appears inflated and should be checked against credit-report monthly payment fields before final decisioning.`,
         borrowerProfile.debts.evidenceRefs
       );
 
       factors.push({
         key: "dti_sanity_high",
         label: "DTI Sanity Check",
-        value: normalized.dti,
+        value: normalized.consumerDebtRatio,
         impact: "negative",
-        summary: `DTI of ${(normalized.dti * 100).toFixed(2)}% appears abnormally high. Verify that balances, credit limits, bank transactions, or duplicate tradelines were not counted as monthly liabilities.`,
+        summary: `DTI of ${(normalized.consumerDebtRatio * 100).toFixed(2)}% appears abnormally high. Verify that balances, credit limits, bank transactions, or duplicate tradelines were not counted as monthly liabilities.`,
         source: "debts",
         evidenceRefs: borrowerProfile.debts.evidenceRefs,
       });
     }
 
-    if (normalized.dti < 0.1 && normalized.income && normalized.income > 30000) {
+    if (normalized.consumerDebtRatio < 0.1 && normalized.income && normalized.income > 30000) {
       addCondition(
         conditions,
         "Liability Review — confirm no monthly liabilities are missing",
         "med",
         "debts",
-        `DTI = ${(normalized.dti * 100).toFixed(2)}% may indicate missing or undercounted monthly liabilities.`,
+        `DTI = ${(normalized.consumerDebtRatio * 100).toFixed(2)}% may indicate missing or undercounted monthly liabilities.`,
         borrowerProfile.debts.evidenceRefs
       );
 
       factors.push({
         key: "dti_sanity_low",
         label: "DTI Sanity Check",
-        value: normalized.dti,
+        value: normalized.consumerDebtRatio,
         impact: "neutral",
-        summary: `DTI of ${(normalized.dti * 100).toFixed(2)}% appears unusually low for a file with normalized income over $30,000. Confirm all credit-report monthly obligations were captured.`,
+        summary: `DTI of ${(normalized.consumerDebtRatio * 100).toFixed(2)}% appears unusually low for a file with normalized income over $30,000. Confirm all credit-report monthly obligations were captured.`,
         source: "debts",
         evidenceRefs: borrowerProfile.debts.evidenceRefs,
       });
@@ -3716,13 +3688,8 @@ function buildDecisionRiskAssessment(
   docs: ParsedAnalysisDoc[]
 ): DecisionRiskAssessment {
   const safeConditions = ensureAnalysisConditionArray(conditions);
-  const proposedHousing = estimateProposedHousingPayment({
-    loanAmount: normalized.loanAmount,
-    propertyValue: normalized.propertyValue,
-    ltv: normalized.ltv,
-  });
-  const totalDti = computeTotalDTI(normalized.income, normalized.debts, proposedHousing?.total ?? null);
-  const consumerDebtRatio = computeConsumerDebtRatio(normalized.income, normalized.debts);
+  const totalDti = normalized.backEndDti;
+  const consumerDebtRatio = normalized.consumerDebtRatio;
   const comp = buildCompensatingFactors(normalized, docs);
 
   let creditRisk = 18;
@@ -3932,14 +3899,7 @@ function buildDenialGuardrails(
   riskAssessment: DecisionRiskAssessment
 ): DenialGuardrailResult {
   const reasons: string[] = [];
-
-  const proposedHousing = estimateProposedHousingPayment({
-    loanAmount: normalized.loanAmount,
-    propertyValue: normalized.propertyValue,
-    ltv: normalized.ltv,
-  });
-
-  const totalDti = computeTotalDTI(normalized.income, normalized.debts, proposedHousing?.total ?? null);
+  const totalDti = normalized.backEndDti;
   const hasMeaningfulAssets = typeof normalized.assets === "number" && normalized.assets >= 10000;
   const hasStrongAssets = typeof normalized.assets === "number" && normalized.assets >= 25000;
 
@@ -4205,20 +4165,15 @@ function computeScore(
   } else {
     score -= 8;
   }
-  const proposedHousing = estimateProposedHousingPayment({
-    loanAmount: normalized.loanAmount,
-    propertyValue: normalized.propertyValue,
-    ltv: normalized.ltv,
-  });
-  const totalDti = computeTotalDTI(normalized.income, normalized.debts, proposedHousing?.total ?? null);
+  const totalDti = normalized.backEndDti;
 
   if (totalDti !== null) {
     if (totalDti <= 0.43) score += 6;
     else if (totalDti > 0.5) score -= 8;
     if (totalDti > 0.6) score -= 12;
-  } else if (normalized.dti !== null) {
-    if (normalized.dti <= 0.43) score += 2;
-    else if (normalized.dti > 0.5) score -= 4;
+  } else if (normalized.consumerDebtRatio !== null) {
+    if (normalized.consumerDebtRatio <= 0.43) score += 2;
+    else if (normalized.consumerDebtRatio > 0.5) score -= 4;
   } else {
     score -= 3;
   }
@@ -4514,14 +4469,28 @@ function buildCanonicalCalculationSet(
   const monthlyIncomeInput = calculationInput({ key: "monthlyQualifyingIncome", label: "Monthly qualifying income", value: monthlyQualifyingIncome.result, unit: "monthly_currency", evidenceSources: monthlyQualifyingIncome.evidenceSources, included: monthlyQualifyingIncome.result !== null });
   const pitiaInput = calculationInput({ key: "pitia", label: "PITIA", value: pitia.result, unit: "monthly_currency", evidenceSources: pitia.evidenceSources, included: pitia.result !== null, estimated: true });
   const liabilitiesInput = calculationInput({ key: "monthlyLiabilities", label: "Monthly liabilities", value: monthlyLiabilities.result, unit: "monthly_currency", evidenceSources: monthlyLiabilities.evidenceSources, included: monthlyLiabilities.result !== null });
-  const housingRatio = calculateDebtToIncomeRatio({ calculationName: "Housing Ratio", monthlyIncome: monthlyIncomeInput, obligations: [pitiaInput], context });
-  const backEndDti = calculateDebtToIncomeRatio({ calculationName: "Back-End DTI", monthlyIncome: monthlyIncomeInput, obligations: [liabilitiesInput, pitiaInput], context });
+  const ratios = calculateCanonicalUnderwritingRatios({
+    monthlyIncome: monthlyIncomeInput,
+    monthlyLiabilities: liabilitiesInput,
+    monthlyHousingExpense: pitiaInput,
+    context,
+  });
   const creditScores = collectMortgageCreditScores(docs);
   const creditScoreSelection = selectRepresentativeCreditScore(
     creditScores.map((score, index) => calculationInput({ key: `creditScore${index + 1}`, label: `Credit score ${index + 1}`, value: score, unit: "credit_score", evidenceSources: profileEvidenceSources(borrowerProfile.creditScore, "creditScore"), included: true })),
     context
   );
-  return { monthlyQualifyingIncome, monthlyLiabilities, pitia, housingRatio, backEndDti, ltv, creditScoreSelection };
+  return {
+    monthlyQualifyingIncome,
+    monthlyLiabilities,
+    pitia,
+    consumerDebtRatio: ratios.consumerDebtRatio,
+    housingRatio: ratios.housingRatio,
+    backEndDti: ratios.backEndDti,
+    ratios,
+    ltv,
+    creditScoreSelection,
+  };
 }
 
 export async function analyzeApplication(
@@ -4540,8 +4509,7 @@ export async function analyzeApplication(
   const orderedDocs = priorityDocs(docs);
   const { evidence, evidenceIndex } = createEvidence(orderedDocs);
   const normalized = buildNormalized(orderedDocs);
-  const borrowerProfile = buildBorrowerProfile(normalized, orderedDocs, evidenceIndex);
-  const conflicts = buildConflicts(borrowerProfile);
+  let borrowerProfile = buildBorrowerProfile(normalized, orderedDocs, evidenceIndex);
   const analyzedAt = new Date().toISOString();
   const calculations = buildCanonicalCalculationSet(normalized, borrowerProfile, orderedDocs, {
     timestamp: analyzedAt,
@@ -4549,6 +4517,13 @@ export async function analyzeApplication(
     overlayContext: options?.overlayContext ?? null,
     confidenceSource: "input_completeness_and_evidence_provenance",
   });
+  normalized.consumerDebtRatio = calculations.consumerDebtRatio.result;
+  normalized.housingRatio = calculations.housingRatio.result;
+  normalized.backEndDti = calculations.backEndDti.result;
+  // Deprecated compatibility contract: legacy dti always means consumer-only debt ratio.
+  normalized.dti = normalized.consumerDebtRatio;
+  borrowerProfile = buildBorrowerProfile(normalized, orderedDocs, evidenceIndex);
+  const conflicts = buildConflicts(borrowerProfile);
   const { conditions, factors } = buildConditionsAndFactors(normalized, borrowerProfile, conflicts, orderedDocs);
   const decision = computeDecision(normalized, conditions, orderedDocs);
   const authoritativeConditions = canonicalizeFinalConditions(applyHardStopConditionHierarchy(conditions, decision));
@@ -4593,7 +4568,11 @@ export async function analyzeApplication(
     score: finalDecision.score,
     confidence: finalDecision.confidence,
     reason: finalDecision.reason,
-    dti: normalized.dti,
+    consumerDebtRatio: normalized.consumerDebtRatio,
+    housingRatio: normalized.housingRatio,
+    backEndDti: normalized.backEndDti,
+    // Deprecated compatibility alias; never use this field for total/back-end DTI.
+    dti: normalized.consumerDebtRatio,
     ltv: normalized.ltv,
     redFlags: legacyRedFlags,
   };

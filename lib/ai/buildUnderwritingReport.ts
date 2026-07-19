@@ -68,6 +68,8 @@ export type UnderwritingReport = {
     debts: number | null;
     dti: number | null;
     consumerDebtRatio?: number | null;
+    housingRatio?: number | null;
+    backEndDti?: number | null;
     totalDti?: number | null;
     proposedHousingPayment?: number | null;
     housingPaymentBreakdown?: HousingPaymentBreakdown;
@@ -177,28 +179,23 @@ function getNumericFactorValue(analysis: AnalysisResult, keys: string[]): number
   return null;
 }
 
-function getReportDti(analysis: AnalysisResult, inputDti?: number) {
-  if (typeof inputDti === "number" && Number.isFinite(inputDti)) return inputDti;
+function getCanonicalRatio(analysis: AnalysisResult, key: "consumerDebtRatio" | "housingRatio" | "backEndDti") {
+  const calculation = (analysis as any)?.calculations?.ratios?.[key] ?? (analysis as any)?.calculations?.[key];
+  if (typeof calculation?.result === "number" && Number.isFinite(calculation.result)) return calculation.result;
 
-  const totalDti = getNumericFactorValue(analysis, ["total_dti", "total dti"]);
-  if (totalDti !== null) return totalDti;
+  const normalized = (analysis as any)?.normalized?.[key];
+  if (typeof normalized === "number" && Number.isFinite(normalized)) return normalized;
 
-  if (typeof (analysis as any)?.dti === "number") return (analysis as any).dti;
-  if (typeof (analysis as any)?.normalized?.dti === "number") return (analysis as any).normalized.dti;
+  const direct = (analysis as any)?.[key];
+  if (typeof direct === "number" && Number.isFinite(direct)) return direct;
 
+  if (key === "consumerDebtRatio") {
+    const legacy = (analysis as any)?.normalized?.dti ?? (analysis as any)?.dti;
+    return typeof legacy === "number" && Number.isFinite(legacy) ? legacy : null;
+  }
+
+  if (key === "backEndDti") return getNumericFactorValue(analysis, ["total_dti", "total dti"]);
   return null;
-}
-
-function getConsumerDebtRatio(analysis: AnalysisResult, reportDti: number | null) {
-  const normalizedDti =
-    typeof (analysis as any)?.normalized?.dti === "number"
-      ? (analysis as any).normalized.dti
-      : null;
-
-  if (normalizedDti !== null && normalizedDti !== reportDti) return normalizedDti;
-
-  const consumer = getNumericFactorValue(analysis, ["consumer_debt_ratio", "consumer debt ratio"]);
-  return consumer;
 }
 
 function getProposedHousingPayment(analysis: AnalysisResult) {
@@ -381,6 +378,7 @@ export function buildUnderwritingReport(
     income?: number;
     debts?: number;
     assets?: number;
+    /** @deprecated Ignored for ratio authority; retained only for caller compatibility. */
     dti?: number;
   }
 ): UnderwritingReport {
@@ -402,8 +400,9 @@ export function buildUnderwritingReport(
       ? (analysis as any).confidence
       : safeNumber((analysis as any)?.decision?.confidence);
 
-  const dti = getReportDti(analysis, input.dti);
-  const consumerDebtRatio = getConsumerDebtRatio(analysis, dti);
+  const consumerDebtRatio = getCanonicalRatio(analysis, "consumerDebtRatio");
+  const housingRatio = getCanonicalRatio(analysis, "housingRatio");
+  const backEndDti = getCanonicalRatio(analysis, "backEndDti");
   const proposedHousingPayment = getProposedHousingPayment(analysis);
 
   const ltv =
@@ -457,9 +456,12 @@ export function buildUnderwritingReport(
     financials: {
       income: safeNumber(input.income),
       debts,
-      dti: safePercent(dti),
+      // Deprecated compatibility contract: legacy dti always means consumer-only debt ratio.
+      dti: safePercent(consumerDebtRatio),
       consumerDebtRatio: safePercent(consumerDebtRatio),
-      totalDti: safePercent(dti),
+      housingRatio: safePercent(housingRatio),
+      backEndDti: safePercent(backEndDti),
+      totalDti: safePercent(backEndDti),
       proposedHousingPayment: safeOptionalNumber(proposedHousingPayment),
       housingPaymentBreakdown,
       assets: safeNumber(input.assets),
@@ -468,7 +470,7 @@ export function buildUnderwritingReport(
     decision: {
       reason: normalizeReason(analysis),
       conditions,
-      conditionSummary: conditionSummaryText(conditions, dti),
+      conditionSummary: conditionSummaryText(conditions, backEndDti),
     },
 
     workflow: {

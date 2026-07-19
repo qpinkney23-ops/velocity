@@ -1,0 +1,54 @@
+{
+  "artifactProfile": {
+    "id": "typical-production-scan-v1",
+    "version": "1.0.0"
+  },
+  "artifacts": [
+    {
+      "dpi": 150,
+      "foldShadowApplied": true,
+      "jpegQuality": 82,
+      "noiseDensity": 0.0014,
+      "pageNumber": 1,
+      "rotationDegrees": -0.0321,
+      "skewPixels": 1.2163
+    },
+    {
+      "dpi": 144,
+      "foldShadowApplied": false,
+      "jpegQuality": 82,
+      "noiseDensity": 0.0014,
+      "pageNumber": 2,
+      "rotationDegrees": 0.136,
+      "skewPixels": -2.0715
+    }
+  ],
+  "binaryDeterminism": "BYTE_IDENTICAL_WITHIN_PINNED_RUNTIME",
+  "binaryDeterminismNote": "PDF metadata is normalized and replay is byte-identical in the pinned runtime. Native canvas, JPEG, or font-engine version changes may change raster bytes across environments and must be treated as a renderer version change.",
+  "borrowerFacingPdfSha256": "33a6024b99532c1f9c9a1f04c32d15ea407c601d79aa8675644c440ab1216735",
+  "documentFamily": "BANK_STATEMENT",
+  "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+  "generatorVersion": "1.0.0",
+  "groundTruthSha256": "24ba30dbcac0b9079f63c4fa6476231d9f726f20e685c15113d657e4df89b9aa",
+  "institution": {
+    "id": "lakeview-community-bank-v1",
+    "version": "1.0.0"
+  },
+  "layout": {
+    "id": "lakeview-traditional-v1",
+    "version": "1.0.0"
+  },
+  "pageCount": 2,
+  "pageImageSha256": [
+    "dcda88f73f9bc0dd24734f4cd8386ef6b55c8de2ecbb8dca57dd99b51c323802",
+    "7b6b15e721c04d91a76ac5e08457949074609c7b0471659538cfea1e940c518b"
+  ],
+  "scenarioId": "scenario-bank-statement-001",
+  "schemaVersion": "velocity.enterprise-renderer.v1",
+  "seed": "velocity-enterprise-bank-statement-v001-seed",
+  "template": {
+    "id": "bank-statement-v1",
+    "version": "1.0.0"
+  },
+  "validationResultsSha256": "3b737c4a2b2152510f6cc6fea5cc5721a9330e05a0d2b2b647ff346fcffa45b0"
+}

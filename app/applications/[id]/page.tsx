@@ -147,6 +147,20 @@ type ScanResult = {
   sourceConfidence?: SourceConfidenceMap | null;
   canonicalConditions?: CanonicalWorkflowCondition[];
   readiness?: WorkflowReadiness | null;
+  calculations?: {
+    ratios?: {
+      consumerDebtRatio?: { result?: number | null };
+      housingRatio?: { result?: number | null };
+      backEndDti?: { result?: number | null };
+    };
+    monthlyQualifyingIncome?: { result?: number | null };
+  };
+  normalized?: {
+    consumerDebtRatio?: number | null;
+    housingRatio?: number | null;
+    backEndDti?: number | null;
+    dti?: number | null;
+  };
 };
 
 type BorrowerProfileField = {
@@ -753,7 +767,13 @@ function getNumericFactorValueFromScan(scanValue: ScanResult | null | undefined,
 
 function getDisplayDtiValue(scanValue: ScanResult | null | undefined, borrowerProfileValue?: BorrowerProfileFlat | null) {
   return (
+    toFiniteNumber((scanValue as any)?.analysis?.calculations?.ratios?.backEndDti?.result) ??
+    toFiniteNumber(scanValue?.calculations?.ratios?.backEndDti?.result) ??
+    toFiniteNumber((scanValue as any)?.analysis?.normalized?.backEndDti) ??
+    toFiniteNumber(scanValue?.normalized?.backEndDti) ??
     getNumericFactorValueFromScan(scanValue, ["total_dti", "total dti"]) ??
+    // Compatibility-only fallbacks for pre-ratio-semantics scans. These cannot
+    // override a canonical server-calculated back-end DTI above.
     toFiniteNumber((scanValue as any)?.displayDti) ??
     toFiniteNumber((scanValue as any)?.extracted?.dti) ??
     toFiniteNumber((scanValue as any)?.ai?.dti) ??
@@ -3390,7 +3410,7 @@ export default function ApplicationDetailPage() {
                           <div className="v-card p-3">
                             <div className="text-xs v-muted">LTV / DTI</div>
                             <div className="text-sm font-semibold mt-1">
-                              {formatPercent(underwritingReport.loan.ltv)} / {formatPercent(underwritingReport.financials.dti)}
+                              {formatPercent(underwritingReport.loan.ltv)} / {formatPercent(underwritingReport.financials.totalDti)}
                             </div>
                             {dtiFactorDisplay?.summary ? (
                               <div className="text-xs v-muted mt-2">{dtiFactorDisplay.summary}</div>

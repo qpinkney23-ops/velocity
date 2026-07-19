@@ -1,0 +1,10 @@
+{
+  "pdfCount": 20,
+  "renderedPageCount": 34,
+  "zip": "C:\\Users\\Qpink\\velocity\\output\\pdf\\velocity-enterprise-validation-pack-001\\Velocity_Enterprise_Validation_Pack_001_Borrower_Documents.zip",
+  "groundTruth": "C:\\Users\\Qpink\\velocity\\output\\pdf\\velocity-enterprise-validation-pack-001\\Velocity_Enterprise_Validation_Pack_001_Ground_Truth.json",
+  "pi": 2395.66,
+  "pitia": 3090.66,
+  "assets": 129570.0,
+  "reserves": 32070.0
+}

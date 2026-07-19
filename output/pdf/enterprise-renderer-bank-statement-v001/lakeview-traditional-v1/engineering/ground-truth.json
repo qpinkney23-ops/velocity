@@ -1,0 +1,399 @@
+{
+  "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+  "expected": {
+    "beginningBalanceCents": 842150,
+    "depositsCents": 795000,
+    "endingBalanceCents": 1353259,
+    "feesCents": 350,
+    "transactionCount": 16,
+    "withdrawalsCents": 283541
+  },
+  "layoutId": "lakeview-traditional-v1",
+  "provenance": [
+    {
+      "canonicalPath": "scenario.borrower.legalName",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "borrower.legalName",
+      "pages": [
+        1,
+        2
+      ],
+      "transformation": "identity"
+    },
+    {
+      "canonicalPath": "scenario.borrower.addressLines",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "borrower.address",
+      "pages": [
+        1
+      ],
+      "transformation": "joined postal address"
+    },
+    {
+      "canonicalPath": "scenario.account.accountNumberLast4",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "account.maskedNumber",
+      "pages": [
+        1,
+        2
+      ],
+      "transformation": "masked to final four digits"
+    },
+    {
+      "canonicalPath": "scenario.account.period",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "statement.period",
+      "pages": [
+        1,
+        2
+      ],
+      "transformation": "ISO date to display date"
+    },
+    {
+      "canonicalPath": "scenario.account.beginningBalanceCents",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "summary.beginningBalance",
+      "pages": [
+        1
+      ],
+      "transformation": "cents to USD"
+    },
+    {
+      "canonicalPath": "scenario.account.transactions[kind=DEPOSIT]",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "summary.deposits",
+      "pages": [
+        1
+      ],
+      "transformation": "sum cents to USD"
+    },
+    {
+      "canonicalPath": "scenario.account.transactions[kind=WITHDRAWAL]",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "summary.withdrawals",
+      "pages": [
+        1
+      ],
+      "transformation": "sum cents to USD"
+    },
+    {
+      "canonicalPath": "scenario.account.transactions[kind=FEE]",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "summary.fees",
+      "pages": [
+        1
+      ],
+      "transformation": "sum cents to USD"
+    },
+    {
+      "canonicalPath": "scenario.account.transactions",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "summary.endingBalance",
+      "pages": [
+        1,
+        2
+      ],
+      "transformation": "reconciled running balance to USD"
+    },
+    {
+      "canonicalPath": "scenario.account.transactions[0]",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "transactions.txn-001",
+      "pages": [
+        1
+      ],
+      "transformation": "date, description, signed amount, and running balance"
+    },
+    {
+      "canonicalPath": "scenario.account.transactions[1]",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "transactions.txn-002",
+      "pages": [
+        1
+      ],
+      "transformation": "date, description, signed amount, and running balance"
+    },
+    {
+      "canonicalPath": "scenario.account.transactions[2]",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "transactions.txn-003",
+      "pages": [
+        1
+      ],
+      "transformation": "date, description, signed amount, and running balance"
+    },
+    {
+      "canonicalPath": "scenario.account.transactions[3]",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "transactions.txn-004",
+      "pages": [
+        1
+      ],
+      "transformation": "date, description, signed amount, and running balance"
+    },
+    {
+      "canonicalPath": "scenario.account.transactions[4]",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "transactions.txn-005",
+      "pages": [
+        1
+      ],
+      "transformation": "date, description, signed amount, and running balance"
+    },
+    {
+      "canonicalPath": "scenario.account.transactions[5]",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "transactions.txn-006",
+      "pages": [
+        1
+      ],
+      "transformation": "date, description, signed amount, and running balance"
+    },
+    {
+      "canonicalPath": "scenario.account.transactions[6]",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "transactions.txn-007",
+      "pages": [
+        1
+      ],
+      "transformation": "date, description, signed amount, and running balance"
+    },
+    {
+      "canonicalPath": "scenario.account.transactions[7]",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "transactions.txn-008",
+      "pages": [
+        1
+      ],
+      "transformation": "date, description, signed amount, and running balance"
+    },
+    {
+      "canonicalPath": "scenario.account.transactions[8]",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "transactions.txn-009",
+      "pages": [
+        2
+      ],
+      "transformation": "date, description, signed amount, and running balance"
+    },
+    {
+      "canonicalPath": "scenario.account.transactions[9]",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "transactions.txn-010",
+      "pages": [
+        2
+      ],
+      "transformation": "date, description, signed amount, and running balance"
+    },
+    {
+      "canonicalPath": "scenario.account.transactions[10]",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "transactions.txn-011",
+      "pages": [
+        2
+      ],
+      "transformation": "date, description, signed amount, and running balance"
+    },
+    {
+      "canonicalPath": "scenario.account.transactions[11]",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "transactions.txn-012",
+      "pages": [
+        2
+      ],
+      "transformation": "date, description, signed amount, and running balance"
+    },
+    {
+      "canonicalPath": "scenario.account.transactions[12]",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "transactions.txn-013",
+      "pages": [
+        2
+      ],
+      "transformation": "date, description, signed amount, and running balance"
+    },
+    {
+      "canonicalPath": "scenario.account.transactions[13]",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "transactions.txn-014",
+      "pages": [
+        2
+      ],
+      "transformation": "date, description, signed amount, and running balance"
+    },
+    {
+      "canonicalPath": "scenario.account.transactions[14]",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "transactions.txn-015",
+      "pages": [
+        2
+      ],
+      "transformation": "date, description, signed amount, and running balance"
+    },
+    {
+      "canonicalPath": "scenario.account.transactions[15]",
+      "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+      "fieldId": "transactions.txn-016",
+      "pages": [
+        2
+      ],
+      "transformation": "date, description, signed amount, and running balance"
+    }
+  ],
+  "scenario": {
+    "account": {
+      "accountNumberLast4": "4821",
+      "accountType": "CHECKING",
+      "beginningBalanceCents": 842150,
+      "id": "account-checking-4821",
+      "period": {
+        "endDate": "2026-05-31",
+        "startDate": "2026-05-01"
+      },
+      "schemaVersion": "velocity.enterprise-renderer.v1",
+      "transactions": [
+        {
+          "amountCents": 385000,
+          "date": "2026-05-01",
+          "description": "ACH CREDIT NORTHSTAR DESIGN PAYROLL",
+          "id": "txn-001",
+          "kind": "DEPOSIT",
+          "schemaVersion": "velocity.enterprise-renderer.v1"
+        },
+        {
+          "amountCents": 165000,
+          "date": "2026-05-02",
+          "description": "ONLINE PAYMENT CEDAR RIDGE PROPERTY",
+          "id": "txn-002",
+          "kind": "WITHDRAWAL",
+          "schemaVersion": "velocity.enterprise-renderer.v1"
+        },
+        {
+          "amountCents": 12643,
+          "date": "2026-05-04",
+          "description": "DEBIT CARD GREEN VALLEY MARKET",
+          "id": "txn-003",
+          "kind": "WITHDRAWAL",
+          "schemaVersion": "velocity.enterprise-renderer.v1"
+        },
+        {
+          "amountCents": 7890,
+          "date": "2026-05-05",
+          "description": "AUTOPAY NORTHFIELD WATER UTILITY",
+          "id": "txn-004",
+          "kind": "WITHDRAWAL",
+          "schemaVersion": "velocity.enterprise-renderer.v1"
+        },
+        {
+          "amountCents": 6250,
+          "date": "2026-05-07",
+          "description": "DEBIT CARD LAKESHORE FUEL 042",
+          "id": "txn-005",
+          "kind": "WITHDRAWAL",
+          "schemaVersion": "velocity.enterprise-renderer.v1"
+        },
+        {
+          "amountCents": 1499,
+          "date": "2026-05-09",
+          "description": "STREAMLINE MEDIA MONTHLY",
+          "id": "txn-006",
+          "kind": "WITHDRAWAL",
+          "schemaVersion": "velocity.enterprise-renderer.v1"
+        },
+        {
+          "amountCents": 25000,
+          "date": "2026-05-12",
+          "description": "TRANSFER FROM SAVINGS 7714",
+          "id": "txn-007",
+          "kind": "DEPOSIT",
+          "schemaVersion": "velocity.enterprise-renderer.v1"
+        },
+        {
+          "amountCents": 5200,
+          "date": "2026-05-13",
+          "description": "DEBIT CARD NORTHFIELD PHARMACY",
+          "id": "txn-008",
+          "kind": "WITHDRAWAL",
+          "schemaVersion": "velocity.enterprise-renderer.v1"
+        },
+        {
+          "amountCents": 18425,
+          "date": "2026-05-15",
+          "description": "DEBIT CARD HARBOR HOUSE DINING",
+          "id": "txn-009",
+          "kind": "WITHDRAWAL",
+          "schemaVersion": "velocity.enterprise-renderer.v1"
+        },
+        {
+          "amountCents": 24000,
+          "date": "2026-05-16",
+          "description": "AUTO LOAN PAYMENT",
+          "id": "txn-010",
+          "kind": "WITHDRAWAL",
+          "schemaVersion": "velocity.enterprise-renderer.v1"
+        },
+        {
+          "amountCents": 385000,
+          "date": "2026-05-16",
+          "description": "ACH CREDIT NORTHSTAR DESIGN PAYROLL",
+          "id": "txn-011",
+          "kind": "DEPOSIT",
+          "schemaVersion": "velocity.enterprise-renderer.v1"
+        },
+        {
+          "amountCents": 11250,
+          "date": "2026-05-19",
+          "description": "AUTOPAY PRAIRIE STATE INSURANCE",
+          "id": "txn-012",
+          "kind": "WITHDRAWAL",
+          "schemaVersion": "velocity.enterprise-renderer.v1"
+        },
+        {
+          "amountCents": 17684,
+          "date": "2026-05-21",
+          "description": "DEBIT CARD GREEN VALLEY MARKET",
+          "id": "txn-013",
+          "kind": "WITHDRAWAL",
+          "schemaVersion": "velocity.enterprise-renderer.v1"
+        },
+        {
+          "amountCents": 9500,
+          "date": "2026-05-24",
+          "description": "AUTOPAY MIDWEST ELECTRIC",
+          "id": "txn-014",
+          "kind": "WITHDRAWAL",
+          "schemaVersion": "velocity.enterprise-renderer.v1"
+        },
+        {
+          "amountCents": 350,
+          "date": "2026-05-27",
+          "description": "MONTHLY ACCOUNT SERVICE FEE",
+          "id": "txn-015",
+          "kind": "FEE",
+          "schemaVersion": "velocity.enterprise-renderer.v1"
+        },
+        {
+          "amountCents": 4200,
+          "date": "2026-05-29",
+          "description": "DEBIT CARD MORNING HARBOR CAFE",
+          "id": "txn-016",
+          "kind": "WITHDRAWAL",
+          "schemaVersion": "velocity.enterprise-renderer.v1"
+        }
+      ]
+    },
+    "borrower": {
+      "addressLines": [
+        "1847 Cedar Ridge Lane",
+        "Northfield, IL 60093"
+      ],
+      "id": "borrower-avery-morgan-001",
+      "legalName": "Avery Elise Morgan",
+      "schemaVersion": "velocity.enterprise-renderer.v1"
+    },
+    "id": "scenario-bank-statement-001",
+    "schemaVersion": "velocity.enterprise-renderer.v1",
+    "seed": "velocity-enterprise-bank-statement-v001-seed"
+  },
+  "schemaVersion": "velocity.enterprise-renderer.v1"
+}

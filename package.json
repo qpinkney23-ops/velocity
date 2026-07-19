@@ -11,6 +11,8 @@
     "velocity:regression": "npx tsx scripts/velocityRegression.ts",
     "velocity:dti": "npx tsx scripts/velocityDtiRegression.ts",
     "velocity:math": "npx tsx scripts/velocityCanonicalMathematicsRegression.ts",
+    "velocity:ratios": "npx tsx scripts/velocityUnderwritingRatioSemanticsRegression.ts",
+    "test:enterprise-bank-statement-renderer": "npx tsx scripts/validateEnterpriseBankStatementSlice.ts",
     "velocity:workflow": "npx tsx scripts/velocityWorkflowRegression.ts",
     "velocity:report": "npx tsx scripts/velocityReportRegression.ts",
     "velocity:ocr": "npx tsx scripts/velocityOcrRegression.ts",

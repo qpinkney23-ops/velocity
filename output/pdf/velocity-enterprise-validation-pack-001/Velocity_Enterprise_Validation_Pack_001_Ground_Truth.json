@@ -1,0 +1,99 @@
+{
+  "packId": "velocity-enterprise-validation-pack-001",
+  "classification": "ENGINEERING GROUND TRUTH - KEEP SEPARATE FROM BORROWER PACKAGE",
+  "synthetic": true,
+  "borrower": {
+    "fullLegalName": "Amelia Rose Bennett",
+    "dob": "1988-11-04",
+    "ssnLast4": "4827",
+    "currentAddress": "742 Willow Bend Lane, Raleigh, NC 27609",
+    "employer": "Northstar Clinical Analytics, Inc.",
+    "occupation": "Data Engineering Manager",
+    "employmentStart": "2019-04-15"
+  },
+  "transaction": {
+    "purpose": "purchase",
+    "occupancy": "owner_occupied_primary_residence",
+    "product": "conventional_30_year_fixed",
+    "subjectProperty": "1187 Meadow Crest Drive, Cary, NC 27513",
+    "loanAmount": 384000.0,
+    "purchasePrice": 480000.0,
+    "appraisedValue": 485000.0,
+    "interestRate": 0.06375,
+    "termMonths": 360,
+    "subordinateFinancing": 0
+  },
+  "income": {
+    "annual": 108000.0,
+    "monthly": 9000.0,
+    "calculation": "108000 / 12"
+  },
+  "assets": {
+    "checking": 18420,
+    "savings": 42850,
+    "brokerage": 68300,
+    "total": 129570.0,
+    "cashToClose": 97500.0,
+    "postClosingReserves": 32070.0,
+    "reserveMonths": 10.3764
+  },
+  "liabilities": {
+    "auto": 425,
+    "studentLoan": 180,
+    "creditCard": 65,
+    "totalMonthly": 670.0
+  },
+  "housing": {
+    "principalAndInterest": 2395.66,
+    "propertyTaxesMonthly": 460.0,
+    "homeownersInsuranceMonthly": 150.0,
+    "mortgageInsuranceMonthly": 0,
+    "hoaMonthly": 85.0,
+    "pitia": 3090.66
+  },
+  "ratios": {
+    "consumerDebtRatio": 0.07444444444444444,
+    "consumerDebtRatioPercent": 7.444444,
+    "housingRatio": 0.34340666666666664,
+    "housingRatioPercent": 34.340667,
+    "backEndDti": 0.4178511111111111,
+    "backEndDtiPercent": 41.785111,
+    "ltv": 0.8,
+    "ltvPercent": 80.0,
+    "cltv": 0.8,
+    "cltvPercent": 80.0,
+    "velocityCurrentRoundedFractions": {
+      "consumerDebtRatio": 0.07,
+      "housingRatio": 0.34,
+      "backEndDti": 0.42
+    }
+  },
+  "credit": {
+    "experian": 746,
+    "equifax": 738,
+    "transunion": 752,
+    "representativeScore": 746
+  },
+  "expectedRecommendation": "Approve/Eligible subject to normal underwriting conditions",
+  "expectedConditions": [
+    "Final verification of employment within applicable pre-closing tolerance",
+    "Document and verify earnest money deposit and source of funds",
+    "Verify sufficient funds to close and post-closing reserves",
+    "Final appraisal review and collateral acceptance",
+    "Final homeowners insurance policy and mortgagee clause",
+    "Clear title, acceptable closing protection, and settlement documentation",
+    "Final credit refresh and verification of no new debt",
+    "Execute final Closing Disclosure and standard closing documents",
+    "Confirm HOA assessment and no undisclosed special assessment"
+  ],
+  "consistencyChecks": {
+    "annualIncomeAcross1003VoePaystubs": 108000,
+    "monthlyDebtAcross1003CreditBank": 670,
+    "purchasePriceAcrossContract1003LeCd": 480000,
+    "loanAmountAcross1003LeCd": 384000,
+    "taxesAnnualAcrossAppraisalEscrow": 5520,
+    "insuranceAnnualAcrossBinderEscrow": 1800,
+    "hoaMonthlyAcrossContractAppraisalHoaEscrow": 85,
+    "pitiaAcrossLeCd": 3090.66
+  }
+}

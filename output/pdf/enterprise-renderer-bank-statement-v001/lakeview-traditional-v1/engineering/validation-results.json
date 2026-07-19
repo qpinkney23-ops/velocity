@@ -1,0 +1,47 @@
+{
+  "documentId": "scenario-bank-statement-001-lakeview-traditional-v1",
+  "passed": true,
+  "results": [
+    {
+      "message": "Schema velocity.enterprise-renderer.v1 is supported.",
+      "ruleId": "schema.supported",
+      "status": "PASS"
+    },
+    {
+      "message": "Rendered borrower identity matches canonical truth.",
+      "ruleId": "identity.matches",
+      "status": "PASS"
+    },
+    {
+      "message": "Statement period matches canonical truth and is ordered.",
+      "ruleId": "statement.dates",
+      "status": "PASS"
+    },
+    {
+      "message": "Transactions are chronological and within the statement period.",
+      "ruleId": "transactions.chronology",
+      "status": "PASS"
+    },
+    {
+      "message": "Transaction IDs are unique.",
+      "ruleId": "transactions.uniqueIds",
+      "status": "PASS"
+    },
+    {
+      "message": "Beginning balance plus deposits less withdrawals and fees equals ending balance.",
+      "ruleId": "balances.reconcile",
+      "status": "PASS"
+    },
+    {
+      "message": "Every required statement field has canonical provenance.",
+      "ruleId": "provenance.complete",
+      "status": "PASS"
+    },
+    {
+      "message": "Institution, template, and two-page layout are compatible.",
+      "ruleId": "selection.compatible",
+      "status": "PASS"
+    }
+  ],
+  "schemaVersion": "velocity.enterprise-renderer.v1"
+}

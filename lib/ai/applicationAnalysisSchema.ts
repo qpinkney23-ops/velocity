@@ -364,6 +364,10 @@ export type NormalizedMetrics = {
   assets: number | null;
   debts: number | null;
   liabilityDetails: ParsedLiability[];
+  consumerDebtRatio: number | null;
+  housingRatio: number | null;
+  backEndDti: number | null;
+  /** @deprecated Compatibility alias for consumerDebtRatio. */
   dti: number | null;
   ltv: number | null;
 };

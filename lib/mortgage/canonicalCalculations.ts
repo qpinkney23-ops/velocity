@@ -1,4 +1,5 @@
 export const CANONICAL_CALCULATION_VERSION = "mortgage_math_v1" as const;
+export const UNDERWRITING_RATIO_SEMANTICS_VERSION = "underwriting-ratios.v1" as const;
 
 export const CANONICAL_PRECISION = {
   currencyDecimalPlaces: 2,
@@ -91,12 +92,29 @@ export type CanonicalCalculation<T extends number | null = number | null> = {
   };
 };
 
+export type CanonicalRatioValueState = "known" | "known_zero" | "unknown" | "estimated";
+
+export type CanonicalRatioCalculation = CanonicalCalculation & {
+  ratioSemanticsVersion: typeof UNDERWRITING_RATIO_SEMANTICS_VERSION;
+  valueState: CanonicalRatioValueState;
+  estimated: boolean;
+};
+
+export type CanonicalUnderwritingRatios = {
+  ratioSemanticsVersion: typeof UNDERWRITING_RATIO_SEMANTICS_VERSION;
+  consumerDebtRatio: CanonicalRatioCalculation;
+  housingRatio: CanonicalRatioCalculation;
+  backEndDti: CanonicalRatioCalculation;
+};
+
 export type CanonicalCalculationSet = {
   monthlyQualifyingIncome: CanonicalCalculation;
   monthlyLiabilities: CanonicalCalculation;
   pitia: CanonicalCalculation;
-  housingRatio: CanonicalCalculation;
-  backEndDti: CanonicalCalculation;
+  consumerDebtRatio: CanonicalRatioCalculation;
+  housingRatio: CanonicalRatioCalculation;
+  backEndDti: CanonicalRatioCalculation;
+  ratios: CanonicalUnderwritingRatios;
   ltv: CanonicalCalculation;
   creditScoreSelection: CanonicalCalculation;
 };
@@ -238,6 +256,70 @@ export function calculateDebtToIncomeRatio(args: {
     context: args.context,
     summary: result === null ? `${args.calculationName} is unavailable.` : `${args.calculationName} is ${ratioToDisplayPercent(result)}%.`,
   });
+}
+
+function canonicalRatioState(calculation: CanonicalCalculation): CanonicalRatioValueState {
+  if (calculation.result === null) return "unknown";
+  if (calculation.inputs.some((input) => input.included && input.estimated)) return "estimated";
+  return calculation.result === 0 ? "known_zero" : "known";
+}
+
+function asCanonicalRatio(calculation: CanonicalCalculation): CanonicalRatioCalculation {
+  const valueState = canonicalRatioState(calculation);
+  return {
+    ...calculation,
+    ratioSemanticsVersion: UNDERWRITING_RATIO_SEMANTICS_VERSION,
+    valueState,
+    estimated: valueState === "estimated",
+  };
+}
+
+export function calculateCanonicalUnderwritingRatios(args: {
+  monthlyIncome: CalculationInput;
+  monthlyLiabilities: CalculationInput;
+  monthlyHousingExpense: CalculationInput;
+  context: CalculationContext;
+}): CanonicalUnderwritingRatios {
+  const consumerDebtRatio = asCanonicalRatio(calculateDebtToIncomeRatio({
+    calculationName: "Consumer Debt Ratio",
+    monthlyIncome: args.monthlyIncome,
+    obligations: [args.monthlyLiabilities],
+    context: args.context,
+  }));
+  const housingRatio = asCanonicalRatio(calculateDebtToIncomeRatio({
+    calculationName: "Housing Ratio",
+    monthlyIncome: args.monthlyIncome,
+    obligations: [args.monthlyHousingExpense],
+    context: args.context,
+  }));
+  const backEndDti = asCanonicalRatio(calculateDebtToIncomeRatio({
+    calculationName: "Back-End DTI",
+    monthlyIncome: args.monthlyIncome,
+    obligations: [args.monthlyLiabilities, args.monthlyHousingExpense],
+    context: args.context,
+  }));
+
+  // Back-end DTI requires both obligation classes. A partial known input must not
+  // silently turn the missing class into zero.
+  const requiredInputsKnown = !args.monthlyLiabilities.missing && args.monthlyLiabilities.value !== null &&
+    !args.monthlyHousingExpense.missing && args.monthlyHousingExpense.value !== null;
+  const completeBackEndDti = requiredInputsKnown
+    ? backEndDti
+    : asCanonicalRatio({
+        ...backEndDti,
+        result: null,
+        explanation: {
+          ...backEndDti.explanation,
+          summary: "Back-End DTI is unavailable because liabilities or housing expense are unknown.",
+        },
+      });
+
+  return {
+    ratioSemanticsVersion: UNDERWRITING_RATIO_SEMANTICS_VERSION,
+    consumerDebtRatio,
+    housingRatio,
+    backEndDti: completeBackEndDti,
+  };
 }
 
 export function selectRepresentativeCreditScoreValue(values: Array<number | null | undefined>): number | null {
