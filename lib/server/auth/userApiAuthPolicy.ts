@@ -25,7 +25,7 @@ export function validateUserApiRoutePolicy(input: unknown): PolicyValidation {
   if (!input || typeof input !== "object" || Array.isArray(input)) return Object.freeze({ ok: false, code: "INTERNAL_ERROR" });
   const p = input as UserApiRoutePolicy;
   const methodsValid = Array.isArray(p.allowedMethods) && p.allowedMethods.length > 0 && p.allowedMethods.every((method) => typeof method === "string" && METHODS.has(method) && method === method.toUpperCase());
-  const sizeValid = p.bodySizeLimit === undefined || (Number.isSafeInteger(p.bodySizeLimit) && p.bodySizeLimit! > 0 && p.bodySizeLimit! <= 10 * 1024 * 1024);
+  const sizeValid = p.bodySizeLimit === undefined || (Number.isSafeInteger(p.bodySizeLimit) && p.bodySizeLimit! >= 0 && p.bodySizeLimit! <= 10 * 1024 * 1024);
   const valid = SAFE_ID.test(p.routeId || "") && SAFE_ID.test(p.auditAction || "") && p.allowedPrincipalKind === "firebase_user" && typeof p.allowSessionCookie === "boolean" && typeof p.allowFirebaseBearer === "boolean" && (p.allowSessionCookie || p.allowFirebaseBearer) && typeof p.requireAuthorizationContext === "boolean" && methodsValid && sizeValid && ["none", "double-submit"].includes(p.csrfMode) && ["none", "same-origin"].includes(p.originPolicy) && typeof p.productionEnabled === "boolean" && typeof p.trustIncomingCorrelationId === "boolean" && !(p.csrfMode === "double-submit" && (!p.allowSessionCookie || p.originPolicy !== "same-origin"));
   return valid ? Object.freeze({ ok: true, policy: p }) : Object.freeze({ ok: false, code: "INTERNAL_ERROR" });
 }

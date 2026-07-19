@@ -9,6 +9,7 @@ import {
   type ServerAuthContextV1,
   type StableServerAuthErrorV1,
 } from "../../contracts/serverAuth";
+import { logDevelopmentServerFailure } from "../diagnostics/safeServerErrorLog";
 
 export type VerifiedFirebaseClaims = Readonly<{
   uid?: unknown;
@@ -92,6 +93,7 @@ export async function verifyFirebaseUserCredential(input: ServerAuthVerifierInpu
   const method = input.classification.kind;
   const credential = method === "firebase_id_token" ? bearerToken(input.authorizationHeader) : typeof input.sessionCookie === "string" && input.sessionCookie.trim() ? input.sessionCookie.trim() : undefined;
   if (!credential) return stableFailure("AUTH_INVALID", requestId);
+  let stage = method === "firebase_id_token" ? "session.verify_id_token" : "session.verify_session_cookie";
   try {
     const claims = method === "firebase_id_token"
       ? await dependencies.adapter.verifyIdToken(credential, true)
@@ -99,11 +101,13 @@ export async function verifyFirebaseUserCredential(input: ServerAuthVerifierInpu
     if (typeof claims.uid !== "string" || !claims.uid) return stableFailure("AUTH_INVALID", requestId);
     const tokenIssuedAt = secondsToIso(claims.issuedAtSeconds), authenticatedAt = secondsToIso(claims.authenticatedAtSeconds);
     if (!tokenIssuedAt || !authenticatedAt || typeof claims.emailVerified !== "boolean") return stableFailure("AUTH_INVALID", requestId);
+    stage = "session.resolve_user";
     await dependencies.adapter.assertUserEnabled(claims.uid);
     const verifiedAt = dependencies.now().toISOString();
     const parsed = parseServerAuthContext({ schemaVersion: SERVER_AUTH_CONTEXT_SCHEMA_VERSION, principal: { kind: "firebase_user", uid: claims.uid, authenticationMethod: method, tokenIssuedAt, authenticatedAt, emailVerified: claims.emailVerified }, verifiedAt, revocationCheckedAt: verifiedAt, requestId, correlationId });
     return parsed.ok ? Object.freeze({ ok: true, context: parsed.value }) : stableFailure("AUTH_INVALID", requestId);
   } catch (error) {
+    logDevelopmentServerFailure({ stage, error, requestId, correlationId });
     return stableFailure(publicCode(error), requestId);
   }
 }
