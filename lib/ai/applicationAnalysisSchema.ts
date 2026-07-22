@@ -400,4 +400,5 @@ export type ApplicationAnalysisResult = {
 
   evidence: EvidenceReference[];
   calculations?: import("@/lib/mortgage/canonicalCalculations").CanonicalCalculationSet;
+  mortgageReview?: import("@/lib/mortgage/review/engine").MortgageReviewPackage;
 };

@@ -92,6 +92,12 @@ export type UnderwritingReport = {
     materialConflicts: string[];
     blockedReasons: string[];
   };
+  mortgageReview?: {
+    status: string;
+    counts: {critical:number;high:number;medium:number;low:number;blocking:number;reviewRequired:number;conditionRequired:number};
+    materialFindings: Array<{title:string;severity:string;disposition:string;summary:string;recommendedAction:string;sourceReferences:string[];conditionRef:string|null}>;
+    blockedReasons: string[];
+  };
 
   factors: {
     key?: string;
@@ -432,6 +438,7 @@ export function buildUnderwritingReport(
   const canonicalWorkflowConditions =
     normalizeCanonicalWorkflowConditions(analysis);
   const enterprise = (analysis as any)?.enterpriseEvidence;
+  const mortgageReview = (analysis as any)?.mortgageReview;
 
   const housingPaymentBreakdown = buildHousingPaymentBreakdown(
     analysis,
@@ -503,6 +510,12 @@ export function buildUnderwritingReport(
       materialConflicts: (enterprise.package?.conflicts || []).map((item:any) => cleanString(item.fieldName)).filter(Boolean),
       blockedReasons: Array.isArray(enterprise.blockedReasons) ? enterprise.blockedReasons : [],
     }} : {}),
+    ...(mortgageReview ? {mortgageReview:{
+      status:cleanString(mortgageReview.summary?.status),
+      counts:{critical:safeNumber(mortgageReview.summary?.critical),high:safeNumber(mortgageReview.summary?.high),medium:safeNumber(mortgageReview.summary?.medium),low:safeNumber(mortgageReview.summary?.low),blocking:safeNumber(mortgageReview.summary?.blocking),reviewRequired:safeNumber(mortgageReview.summary?.reviewRequired),conditionRequired:safeNumber(mortgageReview.summary?.conditionRequired)},
+      materialFindings:(mortgageReview.findings||[]).filter((f:any)=>f.severity==="critical"||f.severity==="high"||f.reviewRequired).map((f:any)=>({title:cleanString(f.title),severity:cleanString(f.severity),disposition:cleanString(f.disposition),summary:cleanString(f.summary),recommendedAction:cleanString(f.recommendedAction),sourceReferences:(f.documents||[]).map((d:any)=>`${d.documentId}${d.pageNumber?` p.${d.pageNumber}`:""}`),conditionRef:f.generatedConditionRef||null})),
+      blockedReasons:(mortgageReview.findings||[]).filter((f:any)=>f.blocking).map((f:any)=>cleanString(f.title)),
+    }}:{}) ,
 
     factors: normalizeFactors(analysis),
   };

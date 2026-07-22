@@ -204,6 +204,20 @@ export async function renderUnderwritingPdf(params: {
     });
   }
 
+  if (report.mortgageReview) {
+    const review=report.mortgageReview;
+    section("Enterprise Mortgage Review");
+    line(`Status: ${titleize(review.status)}`,{bold:true});
+    line(`Critical: ${review.counts.critical} | High: ${review.counts.high} | Medium: ${review.counts.medium} | Low: ${review.counts.low}`);
+    line(`Blocking: ${review.counts.blocking} | Review Required: ${review.counts.reviewRequired} | Conditions: ${review.counts.conditionRequired}`);
+    review.materialFindings.slice(0,10).forEach((finding,i)=>{
+      line(`${i+1}. ${finding.title} [${titleize(finding.severity)}]`,{bold:true,size:11,gap:15});
+      paragraph(finding.summary,{size:10,indent:"   "});
+      paragraph(`Next action: ${finding.recommendedAction}`,{size:9,indent:"   "});
+      if(finding.sourceReferences.length)line(`   Sources: ${finding.sourceReferences.slice(0,4).join(", ")}`,{size:9});
+    });
+  }
+
   section("Decision Reason");
   paragraph(report.decision.reason || "—");
 

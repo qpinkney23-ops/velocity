@@ -62,6 +62,7 @@ type EnterpriseEvidenceReview = {
   blockedReasons: string[];
   reviewReasons: string[];
 };
+type MortgageReview = {summary:{status:"clear"|"review_required"|"blocked";total:number;critical:number;high:number;medium:number;low:number;informational:number;blocking:number;reviewRequired:number;conditionRequired:number};findings:Array<{findingId:string;category:string;title:string;summary:string;explanation:string;severity:string;disposition:string;blocking:boolean;reviewRequired:boolean;affectedFields:string[];documents:Array<{documentId:string;pageNumber:number|null}>;observedValues:Array<string|number|boolean|null>;expectedRelationship:string;resolutionStatus:string;recommendedAction:string;generatedConditionRef:string|null;derivedValueIds:string[];borrowerId:string|null}>};
 
 
 type HousingPaymentBreakdown = {
@@ -171,6 +172,7 @@ type ScanResult = {
     dti?: number | null;
   };
   enterpriseEvidence?: EnterpriseEvidenceReview;
+  mortgageReview?: MortgageReview;
 };
 
 type BorrowerProfileField = {
@@ -2131,6 +2133,11 @@ export default function ApplicationDetailPage() {
   const [manualEvidence, setManualEvidence] = useState("");
   const [lastScanDiagnostics, setLastScanDiagnostics] = useState<ScanDiagnostics | null>(null);
   const [canonicalDocuments, setCanonicalDocuments] = useState<StoredDoc[]>([]);
+  const [reviewSeverity,setReviewSeverity]=useState("all");
+  const [reviewCategory,setReviewCategory]=useState("all");
+  const [reviewDisposition,setReviewDisposition]=useState("all");
+  const [reviewBorrower,setReviewBorrower]=useState("all");
+  const [reviewResolution,setReviewResolution]=useState("all");
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
@@ -2191,6 +2198,8 @@ export default function ApplicationDetailPage() {
   const statusOptions = useMemo(() => ["New", "UW Review", "Conditions", "Approved"] as const, []);
   const underwritingReport = scan?.report || null;
   const enterpriseEvidence: EnterpriseEvidenceReview | null = scan?.enterpriseEvidence || (scan as any)?.analysis?.enterpriseEvidence || null;
+  const mortgageReview: MortgageReview | null = scan?.mortgageReview || (scan as any)?.analysis?.mortgageReview || null;
+  const visibleMortgageFindings=(mortgageReview?.findings||[]).filter(f=>(reviewSeverity==="all"||f.severity===reviewSeverity)&&(reviewCategory==="all"||f.category===reviewCategory)&&(reviewDisposition==="all"||f.disposition===reviewDisposition)&&(reviewBorrower==="all"||(f.borrowerId||"unassociated")===reviewBorrower)&&(reviewResolution==="all"||f.resolutionStatus===reviewResolution));
   const scanDiagnostics = lastScanDiagnostics || scan?.diagnostics || null;
 
   async function saveStatus() {
@@ -2453,6 +2462,7 @@ export default function ApplicationDetailPage() {
         calculations: canonicalAnalysis?.calculations,
         normalized: canonicalAnalysis?.normalized,
         enterpriseEvidence: canonicalAnalysis?.enterpriseEvidence,
+        mortgageReview: canonicalAnalysis?.mortgageReview,
       };
 
       setApp(current => current ? {...current, scan: scanToSave} : current);
@@ -2988,6 +2998,21 @@ export default function ApplicationDetailPage() {
           </button>
         </div>
       </div>
+
+      {mortgageReview ? (
+        <section className="v-card p-5" aria-label="Enterprise mortgage review">
+          <div className="flex items-start justify-between gap-3 flex-wrap"><div><div className="text-sm font-semibold">Enterprise Mortgage Review</div><div className="text-xs v-muted mt-1">Deterministic package-level consistency and exception review.</div></div><ToneChip label={toTitleWords(mortgageReview.summary.status)} tone={mortgageReview.summary.status==="blocked"?"red":mortgageReview.summary.status==="review_required"?"amber":"green"}/></div>
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mt-4">{[["Critical",mortgageReview.summary.critical],["High",mortgageReview.summary.high],["Medium",mortgageReview.summary.medium],["Low",mortgageReview.summary.low],["Review",mortgageReview.summary.reviewRequired],["Conditions",mortgageReview.summary.conditionRequired]].map(([label,value])=><div key={String(label)} className="v-card-soft p-3"><div className="text-xs v-muted">{label}</div><div className="text-lg font-semibold mt-1">{value}</div></div>)}</div>
+          <div className="grid md:grid-cols-5 gap-2 mt-4">
+            <select className="border rounded-xl p-2 bg-white text-sm" value={reviewSeverity} onChange={e=>setReviewSeverity(e.target.value)}><option value="all">All severities</option>{["critical","high","medium","low","informational"].map(x=><option key={x} value={x}>{toTitleWords(x)}</option>)}</select>
+            <select className="border rounded-xl p-2 bg-white text-sm" value={reviewCategory} onChange={e=>setReviewCategory(e.target.value)}><option value="all">All categories</option>{[...new Set(mortgageReview.findings.map(f=>f.category))].sort().map(x=><option key={x} value={x}>{toTitleWords(x)}</option>)}</select>
+            <select className="border rounded-xl p-2 bg-white text-sm" value={reviewDisposition} onChange={e=>setReviewDisposition(e.target.value)}><option value="all">All dispositions</option>{[...new Set(mortgageReview.findings.map(f=>f.disposition))].sort().map(x=><option key={x} value={x}>{toTitleWords(x)}</option>)}</select>
+            <select className="border rounded-xl p-2 bg-white text-sm" value={reviewBorrower} onChange={e=>setReviewBorrower(e.target.value)}><option value="all">All borrowers</option>{[...new Set(mortgageReview.findings.map(f=>f.borrowerId||"unassociated"))].sort().map(x=><option key={x} value={x}>{x==="unassociated"?"Unassociated borrower":x}</option>)}</select>
+            <select className="border rounded-xl p-2 bg-white text-sm" value={reviewResolution} onChange={e=>setReviewResolution(e.target.value)}><option value="all">All resolution states</option><option value="open">Open</option><option value="cleared">Cleared</option></select>
+          </div>
+          <div className="space-y-2 mt-4">{visibleMortgageFindings.length?visibleMortgageFindings.map(f=><details key={f.findingId} className="v-card-soft p-3"><summary className="cursor-pointer list-none"><div className="flex justify-between gap-2"><div><div className="text-sm font-semibold">{f.title}</div><div className="text-xs v-muted mt-1">{f.summary}</div></div><div className="flex gap-1 flex-wrap"><ToneChip label={toTitleWords(f.severity)} tone={f.severity==="critical"||f.severity==="high"?"red":f.severity==="medium"?"amber":"blue"}/><ToneChip label={toTitleWords(f.disposition)} tone={f.blocking?"red":f.reviewRequired?"amber":"gray"}/></div></div></summary><div className="mt-3 pt-3 border-t text-xs space-y-2" style={{borderColor:"rgba(15,23,42,.08)"}}><p>{f.explanation}</p><div><span className="font-semibold">Observed:</span> {f.observedValues.length?f.observedValues.map(String).join(" vs "):"Required evidence is absent"}</div><div><span className="font-semibold">Expected:</span> {f.expectedRelationship}</div><div><span className="font-semibold">Canonical fields:</span> {f.affectedFields.join(", ")}</div>{f.derivedValueIds.length?<div><span className="font-semibold">Derived chains:</span> {f.derivedValueIds.length}</div>:null}<div><span className="font-semibold">Sources:</span> {f.documents.length?f.documents.map(d=>`${d.documentId}${d.pageNumber?` p.${d.pageNumber}`:""}`).join(", "):"Missing-evidence basis"}</div><div><span className="font-semibold">Next action:</span> {f.recommendedAction}</div>{f.generatedConditionRef?<div><span className="font-semibold">Condition:</span> Generated and linked</div>:null}</div></details>):<div className="text-sm v-muted p-3">No findings match the selected filters.</div>}</div>
+        </section>
+      ) : hasScan ? <div className="v-card p-4 text-sm v-muted">Legacy analysis — mortgage package review has not been run.</div> : null}
 
       {enterpriseEvidence ? (
         <section className="v-card p-5" aria-label="Evidence-backed underwriting review">
