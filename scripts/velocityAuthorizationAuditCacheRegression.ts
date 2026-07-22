@@ -9,6 +9,7 @@ function assert(value: unknown, message: string): asserts value { if (!value) th
 const approvedProductionImports = new Map([
   ["app/api/applications/[id]/route.ts", new Set(["../../../../lib/server/authorization/applicationAuthorizationOrchestrator", "../../../../lib/server/authorization/authorizationAuditPersistence"])],
   ["app/api/applications/[id]/analyze/route.ts", new Set(["@/lib/server/authorization/applicationAuthorizationOrchestrator", "@/lib/server/authorization/authorizationAuditPersistence"])],
+  ["app/api/applications/[id]/workspace/route.ts", new Set(["@/lib/server/authorization/applicationAuthorizationOrchestrator", "@/lib/server/authorization/authorizationAuditPersistence"])],
 ]);
 function importSpecifiers(source: string, file: string): string[] {
   const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, file.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS);

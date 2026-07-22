@@ -10,6 +10,10 @@ type RegressionJob = {
 
 const jobs: RegressionJob[] = [
   {
+    name: "Enterprise Governance Regression",
+    script: "scripts/velocityEnterpriseGovernanceRegression.ts",
+  },
+  {
     name: "Underwriter Workspace Regression",
     script: "scripts/velocityUnderwriterWorkspaceRegression.ts",
   },

@@ -160,6 +160,7 @@ export default function AdminPage() {
 
   return (
     <div className="space-y-5">
+      <a href="/admin/governance" className="v-card p-4 flex items-center justify-between gap-3 border-blue-200 bg-blue-50"><div><div className="font-semibold text-blue-950">Enterprise Administration & Governance</div><div className="text-xs text-blue-800 mt-1">Manage organization policy, teams, memberships, roles, permissions, feature flags, and governance audit.</div></div><span className="text-blue-800">Open →</span></a>
       <div className="rounded-2xl border bg-slate-950 text-white p-6 shadow-sm">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>

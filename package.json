@@ -22,6 +22,7 @@
     "velocity:enterprise-pipeline": "npx tsx scripts/velocityEnterprisePipelineRegression.ts",
     "velocity:change-intelligence": "npx tsx scripts/velocityChangeIntelligenceRegression.ts",
     "velocity:underwriter-workspace": "npx tsx scripts/velocityUnderwriterWorkspaceRegression.ts",
+    "velocity:enterprise-governance": "npx tsx scripts/velocityEnterpriseGovernanceRegression.ts",
     "velocity:report": "npx tsx scripts/velocityReportRegression.ts",
     "velocity:ocr": "npx tsx scripts/velocityOcrRegression.ts",
     "velocity:tenant-auth": "npx tsx scripts/velocityTenantAuthorizationRunner.ts",

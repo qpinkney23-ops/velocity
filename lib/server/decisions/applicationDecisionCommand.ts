@@ -6,6 +6,7 @@ import { defaultAdminApp } from "../auth/firebaseAdminAuthAdapter";
 import { APPLICATION_ACTION_POLICIES } from "../authorization/applicationActionPolicies";
 import { authorizeApplicationAction } from "../authorization/applicationAuthorizationOrchestrator";
 import { permissionsForRole } from "../authorization/permissionPolicy";
+import {DEFAULT_APPROVAL_POLICY,evaluateApprovalAuthority} from "../../governance/enterpriseGovernance";
 
 export const DECISION_COMMAND_POLICY = Object.freeze({ schemaVersion: "application-decision-command-policy.v1", producerVersion: "application-decision-command.v1", status: "provisional_product_review_required", actions: Object.freeze(["approve", "deny"]), justificationByAction: Object.freeze({ approve: Object.freeze(["analysis_and_conditions_satisfied"]), deny: Object.freeze(["policy_requirements_not_met", "unresolved_material_evidence", "unacceptable_risk", "documentation_incomplete", "other"]) }), maximumNoteLength: 500 });
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -61,6 +62,7 @@ export async function executeApplicationDecisionCommand(input: Input) {
   const allowed = await authorize(input.auth, input.applicationId); if (!allowed.ok) return fail(allowed.publicError.code, allowed.publicError.status, input.auth);
   const body = parse(input.body); if (!body) return denial(input, allowed.context.tenantId, "JUSTIFICATION_INVALID", "invalid_request", "application.read");
   const permission = body.action === "approve" ? "decision.approve" : "decision.deny";
+  const authority=evaluateApprovalAuthority({role:allowed.context.role,action:body.action,policy:DEFAULT_APPROVAL_POLICY});if(!authority.allowed)return denial(input,allowed.context.tenantId,authority.reason,body.action,permission);
   if (!permissionsForRole(allowed.context.role).includes(permission as any)) return denial(input, allowed.context.tenantId, "FORBIDDEN", body.action, permission);
   const analysis = await analysisFacts(allowed.context.tenantId, input.applicationId); if (!analysis) return denial(input, allowed.context.tenantId, "ANALYSIS_NOT_AVAILABLE", body.action, permission);
   const fingerprint = hash({ tenantId: allowed.context.tenantId, applicationId: input.applicationId, action: body.action, justificationCode: body.justificationCode, noteHash: body.note ? hash(body.note) : null, reviewer: allowed.context.authentication.principalId, permission, expectedWorkflowVersion: body.expectedWorkflowVersion, expectedDecisionVersion: body.expectedDecisionVersion, expectedAnalysisId: body.expectedAnalysisId, expectedAnalysisVersion: body.expectedAnalysisVersion, expectedAnalysisOutputFingerprint: body.expectedAnalysisOutputFingerprint, expectedEvidenceAggregationFingerprint: body.expectedEvidenceAggregationFingerprint, policyVersion: DECISION_COMMAND_POLICY.schemaVersion });

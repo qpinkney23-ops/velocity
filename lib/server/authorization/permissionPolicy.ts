@@ -1,5 +1,6 @@
 import { AUTHORIZATION_CONSTRAINTS, AUTHORIZATION_DECISION_V1, AUTHORIZATION_DENIAL_REASONS, AUTHORIZATION_PERMISSION_VERSION, AUTHORIZATION_PERMISSIONS, AUTHORIZATION_POLICY_VERSION, AUTHORIZATION_RESOURCE_TYPES, parseAuthorizationContext, parseAuthorizationDecision, type AnyAuthorizationContextV1, type AuthorizationConstraint, type AuthorizationDecisionV1, type AuthorizationDenialReason, type AuthorizationPermission, type AuthorizationResourceType, type ConstraintEvaluation } from "../../contracts/authorization";
 import type { TenantRole } from "../../contracts/tenantSystem";
+import {permissionsForGovernanceRole} from "../../governance/enterpriseGovernance";
 
 export const ROLE_PERMISSION_MATRIX = Object.freeze({
   version: AUTHORIZATION_PERMISSION_VERSION,
@@ -18,7 +19,7 @@ export const ROLE_PERMISSION_MATRIX = Object.freeze({
 /** Compatibility alias for callers compiled against the SEC-002 provisional symbol. */
 export const PROVISIONAL_ROLE_PERMISSION_MATRIX = ROLE_PERMISSION_MATRIX;
 
-export function permissionsForRole(role: TenantRole): readonly AuthorizationPermission[] { return Object.freeze([...(ROLE_PERMISSION_MATRIX.roles[role] || [])]) as readonly AuthorizationPermission[]; }
+export function permissionsForRole(role: TenantRole): readonly AuthorizationPermission[] { return permissionsForGovernanceRole(role); }
 
 export type AuthorizationPolicyV1 = Readonly<{ policyVersion: typeof AUTHORIZATION_POLICY_VERSION; permission: AuthorizationPermission; resourceType: AuthorizationResourceType; requiredConstraints: readonly AuthorizationConstraint[]; auditAction: string }>;
 export type AuthorizationResourceFactsV1 = Readonly<{ tenantId?: string; ownershipState: "tenant_owned" | "unresolved_legacy" | "not_applicable"; branchId?: string; teamId?: string; assignedUserId?: string; assignedTeamId?: string; creatorId?: string }>;
