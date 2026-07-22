@@ -23,7 +23,7 @@ export const TENANT_CONTRACT_ADAPTER_VERSION = "tenant-contract-adapter.v1";
 
 export const TENANT_STATUSES = ["active", "suspended", "disabled", "unknown"] as const;
 export type TenantStatus = typeof TENANT_STATUSES[number];
-export const MEMBERSHIP_STATUSES = ["invited", "active", "suspended", "disabled", "unknown"] as const;
+export const MEMBERSHIP_STATUSES = ["invited", "pending", "active", "suspended", "disabled", "expired", "archived", "unknown"] as const;
 export type MembershipStatus = typeof MEMBERSHIP_STATUSES[number];
 export const TENANT_ROLES = ["owner", "admin", "underwriter", "processor", "loan_officer", "viewer", "service_account", "unknown"] as const;
 export type TenantRole = typeof TENANT_ROLES[number];
