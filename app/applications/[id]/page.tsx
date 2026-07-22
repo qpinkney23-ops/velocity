@@ -54,6 +54,15 @@ type SourceConfidence = {
 
 type SourceConfidenceMap = Record<string, SourceConfidence>;
 
+type EnterpriseEvidenceReview = {
+  schemaVersion: string;
+  state: "evidence_backed" | "review_required" | "blocked";
+  fields: Array<{field:string;label:string;canonicalValue:string|number|boolean|null;confidence:number|null;verificationState:string;sourceCount:number;winningEvidenceId:string|null;supportingEvidenceIds:string[];rejectedEvidenceIds:string[];resolutionReason:string|null;dependencies:string[]}>;
+  package: { evidence: Array<{evidenceId:string;documentId:string;documentType:string;pageNumber:number;rawValue:string;normalizedValue:string|number;extractionMethod:string;confidence:number}>; conflicts:Array<{fieldName:string;reason:string;normalizedValues:Array<string|number>}> };
+  blockedReasons: string[];
+  reviewReasons: string[];
+};
+
 
 type HousingPaymentBreakdown = {
   principalAndInterest?: number | null;
@@ -161,6 +170,7 @@ type ScanResult = {
     backEndDti?: number | null;
     dti?: number | null;
   };
+  enterpriseEvidence?: EnterpriseEvidenceReview;
 };
 
 type BorrowerProfileField = {
@@ -347,6 +357,7 @@ type AnalyzeResponse = {
       dti?: number | null;
       ltv?: number | null;
     };
+    enterpriseEvidence?: EnterpriseEvidenceReview;
   };
 };
 
@@ -2179,6 +2190,7 @@ export default function ApplicationDetailPage() {
 
   const statusOptions = useMemo(() => ["New", "UW Review", "Conditions", "Approved"] as const, []);
   const underwritingReport = scan?.report || null;
+  const enterpriseEvidence: EnterpriseEvidenceReview | null = scan?.enterpriseEvidence || (scan as any)?.analysis?.enterpriseEvidence || null;
   const scanDiagnostics = lastScanDiagnostics || scan?.diagnostics || null;
 
   async function saveStatus() {
@@ -2311,6 +2323,7 @@ export default function ApplicationDetailPage() {
         throw new Error(msg);
       }
       const data = (envelope.analysis || {}) as AnalyzeResponse;
+      const canonicalAnalysis = (data as any).analysis || data;
 
       const diagnostics: ScanDiagnostics = {
         uploadedCount:
@@ -2335,47 +2348,47 @@ export default function ApplicationDetailPage() {
 
       const canonical = {
         borrower:
-          (data?.analysis?.normalized?.borrower || "").toString().trim() ||
+          (canonicalAnalysis?.normalized?.borrower || "").toString().trim() ||
           (data?.extracted?.borrower || "").toString().trim(),
         fullName:
-          (data?.analysis?.normalized?.fullName || "").toString().trim() ||
+          (canonicalAnalysis?.normalized?.fullName || "").toString().trim() ||
           (data?.extracted?.fullName || "").toString().trim() ||
           (data?.extracted?.borrower || "").toString().trim(),
         email:
-          (data?.analysis?.normalized?.email || "").toString().trim() ||
+          (canonicalAnalysis?.normalized?.email || "").toString().trim() ||
           (data?.extracted?.email || "").toString().trim(),
         dob:
-          (data?.analysis?.normalized?.dob || "").toString().trim() ||
+          (canonicalAnalysis?.normalized?.dob || "").toString().trim() ||
           (data?.extracted?.dob || "").toString().trim(),
         ssnLast4:
-          (data?.analysis?.normalized?.ssnLast4 || "").toString().trim() ||
+          (canonicalAnalysis?.normalized?.ssnLast4 || "").toString().trim() ||
           (data?.extracted?.ssnLast4 || "").toString().trim(),
         loanNumber:
-          (data?.analysis?.normalized?.loanNumber || "").toString().trim() ||
+          (canonicalAnalysis?.normalized?.loanNumber || "").toString().trim() ||
           (data?.extracted?.loanNumber || "").toString().trim() ||
           (data?.report?.borrower?.loanNumber || "").toString().trim(),
         income:
-          data?.analysis?.normalized?.income ?? data?.extracted?.income ?? null,
+          canonicalAnalysis?.normalized?.income ?? data?.extracted?.income ?? null,
         creditScore:
-          data?.analysis?.normalized?.creditScore ?? data?.extracted?.creditScore ?? null,
+          canonicalAnalysis?.normalized?.creditScore ?? data?.extracted?.creditScore ?? null,
         address:
-          (data?.analysis?.normalized?.address || "").toString().trim() ||
+          (canonicalAnalysis?.normalized?.address || "").toString().trim() ||
           (data?.extracted?.address || "").toString().trim(),
         employerAddress:
-          cleanEmployerAddressValue(data?.analysis?.normalized?.employerAddress || "") ||
+          cleanEmployerAddressValue(canonicalAnalysis?.normalized?.employerAddress || "") ||
           cleanEmployerAddressValue(data?.extracted?.employerAddress || ""),
         loanAmount:
-          data?.analysis?.normalized?.loanAmount ?? data?.extracted?.loanAmount ?? null,
+          canonicalAnalysis?.normalized?.loanAmount ?? data?.extracted?.loanAmount ?? null,
         assets:
-          data?.analysis?.normalized?.assets ?? data?.extracted?.assets ?? null,
+          canonicalAnalysis?.normalized?.assets ?? data?.extracted?.assets ?? null,
         debts:
-          data?.analysis?.normalized?.debts ?? data?.extracted?.debts ?? null,
+          canonicalAnalysis?.normalized?.debts ?? data?.extracted?.debts ?? null,
         propertyValue:
-          data?.analysis?.normalized?.propertyValue ?? data?.extracted?.propertyValue ?? null,
+          canonicalAnalysis?.normalized?.propertyValue ?? data?.extracted?.propertyValue ?? null,
         dti:
-          data?.analysis?.normalized?.dti ?? data?.ai?.dti ?? null,
+          canonicalAnalysis?.normalized?.dti ?? data?.ai?.dti ?? null,
         ltv:
-          data?.analysis?.normalized?.ltv ?? data?.ai?.ltv ?? null,
+          canonicalAnalysis?.normalized?.ltv ?? data?.ai?.ltv ?? null,
       };
 
       const nextBorrowerProfileFS = buildBorrowerProfileFromCanonical(canonical);
@@ -2396,7 +2409,7 @@ export default function ApplicationDetailPage() {
         ])
       ) as UWCondition[];
 
-      const sourceConfidence = buildSourceConfidenceFromAnalysis(data?.analysis);
+      const sourceConfidence = buildSourceConfidenceFromAnalysis(canonicalAnalysis);
 
       const scanToSave: ScanResult = {
         mode: (data.mode || "unknown") as any,
@@ -2430,14 +2443,19 @@ export default function ApplicationDetailPage() {
         canonicalConditions:
           Array.isArray(data?.canonicalConditions)
             ? data.canonicalConditions
-            : Array.isArray(data?.analysis?.canonicalConditions)
-            ? data.analysis.canonicalConditions
+            : Array.isArray(canonicalAnalysis?.canonicalConditions)
+            ? canonicalAnalysis.canonicalConditions
             : [],
         readiness:
           data?.readiness ||
-          data?.analysis?.readiness ||
+          canonicalAnalysis?.readiness ||
           null,
+        calculations: canonicalAnalysis?.calculations,
+        normalized: canonicalAnalysis?.normalized,
+        enterpriseEvidence: canonicalAnalysis?.enterpriseEvidence,
       };
+
+      setApp(current => current ? {...current, scan: scanToSave} : current);
 
       toast({
         type: "success",
@@ -2970,6 +2988,46 @@ export default function ApplicationDetailPage() {
           </button>
         </div>
       </div>
+
+      {enterpriseEvidence ? (
+        <section className="v-card p-5" aria-label="Evidence-backed underwriting review">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <div className="text-sm font-semibold">Evidence-backed underwriting values</div>
+              <div className="text-xs v-muted mt-1">Canonical values, source lineage, conflicts, and calculation dependencies.</div>
+            </div>
+            <ToneChip label={toTitleWords(enterpriseEvidence.state)} tone={enterpriseEvidence.state === "blocked" ? "red" : enterpriseEvidence.state === "review_required" ? "amber" : "green"} />
+          </div>
+          {(enterpriseEvidence.blockedReasons.length || enterpriseEvidence.reviewReasons.length) ? (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+              {[...enterpriseEvidence.blockedReasons, ...enterpriseEvidence.reviewReasons].map(toTitleWords).join(" • ")}
+            </div>
+          ) : null}
+          <div className="mt-4 grid gap-2 md:grid-cols-2">
+            {enterpriseEvidence.fields.map((field) => {
+              const ids = new Set([field.winningEvidenceId, ...field.supportingEvidenceIds, ...field.rejectedEvidenceIds].filter(Boolean));
+              const sources = enterpriseEvidence.package.evidence.filter(item => ids.has(item.evidenceId));
+              const conflicts = enterpriseEvidence.package.conflicts.filter(item => item.fieldName === field.field);
+              return (
+                <details key={field.field} className="v-card-soft p-3">
+                  <summary className="cursor-pointer list-none">
+                    <div className="flex items-start justify-between gap-2">
+                      <div><div className="text-xs v-muted">{field.label}</div><div className="text-sm font-semibold mt-1">{field.canonicalValue ?? "Unavailable"}</div></div>
+                      <div className="flex gap-1 flex-wrap justify-end"><ToneChip label={field.confidence === null ? "Derived" : `${Math.round(field.confidence * 100)}%`} tone={field.confidence !== null && field.confidence < .7 ? "amber" : "green"} /><ToneChip label={`${field.sourceCount} source${field.sourceCount === 1 ? "" : "s"}`} tone="blue" />{conflicts.length ? <ToneChip label="Conflict" tone="red" /> : null}</div>
+                    </div>
+                  </summary>
+                  <div className="mt-3 border-t pt-3 text-xs space-y-2" style={{borderColor:"rgba(15,23,42,.08)"}}>
+                    <div><span className="font-semibold">Resolution:</span> {field.resolutionReason || "Canonical calculation output"}</div>
+                    {field.dependencies.length ? <div><span className="font-semibold">Dependencies:</span> {field.dependencies.join(", ")}</div> : null}
+                    {sources.map(source => <div key={source.evidenceId} className="rounded-lg bg-white p-2"><div className="font-semibold">{source.documentId} · {source.documentType} · page {source.pageNumber}</div><div className="v-muted mt-1">Raw: {source.rawValue}</div><div className="v-muted">Normalized: {String(source.normalizedValue)} · {source.extractionMethod} · {Math.round(source.confidence*100)}%</div>{field.rejectedEvidenceIds.includes(source.evidenceId) ? <div className="text-red-700 mt-1">Rejected conflicting source</div> : null}</div>)}
+                    {conflicts.map((conflict, index) => <div key={index} className="text-red-700">Conflict: {conflict.normalizedValues.map(String).join(" vs ")} ({toTitleWords(conflict.reason)})</div>)}
+                  </div>
+                </details>
+              );
+            })}
+          </div>
+        </section>
+      ) : hasScan ? <div className="v-card p-4 text-sm v-muted">Legacy analysis — enterprise evidence lineage is not available for this saved analysis.</div> : null}
 
       <div className="grid lg:grid-cols-3 gap-3">
         <div className="lg:col-span-2 space-y-3">

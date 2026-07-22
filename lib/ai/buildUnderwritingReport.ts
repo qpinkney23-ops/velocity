@@ -86,6 +86,13 @@ export type UnderwritingReport = {
     canonicalConditions: CanonicalWorkflowReportCondition[];
   };
 
+  evidenceReview?: {
+    state: string;
+    fields: Array<{label:string;canonicalValue:string|number|null;confidence:number|null;sourceCount:number;conflict:boolean;reviewRequired:boolean;sourceReferences:string[]}>;
+    materialConflicts: string[];
+    blockedReasons: string[];
+  };
+
   factors: {
     key?: string;
     label: string;
@@ -220,6 +227,7 @@ function buildHousingPaymentBreakdown(
     overlayContext: analysis.calculations?.pitia.overlayContext ?? null,
     confidenceSource: "report_input_completeness_and_analysis_provenance",
   };
+
   const loanAmountInput = calculationInput({ key: "loanAmount", label: "Loan amount", value: loanAmount, unit: "currency", evidenceSources: [], included: loanAmount > 0 });
   const propertyValueInput = calculationInput({ key: "propertyValue", label: "Property value", value: propertyValue, unit: "currency", evidenceSources: [], included: propertyValue > 0 });
   const ltvCalculation = calculateLtv(loanAmountInput, propertyValueInput, context);
@@ -423,6 +431,7 @@ export function buildUnderwritingReport(
 
   const canonicalWorkflowConditions =
     normalizeCanonicalWorkflowConditions(analysis);
+  const enterprise = (analysis as any)?.enterpriseEvidence;
 
   const housingPaymentBreakdown = buildHousingPaymentBreakdown(
     analysis,
@@ -477,6 +486,23 @@ export function buildUnderwritingReport(
       readiness: workflowReadiness,
       canonicalConditions: canonicalWorkflowConditions,
     },
+
+    ...(enterprise ? { evidenceReview: {
+      state: cleanString(enterprise.state),
+      fields: (Array.isArray(enterprise.fields) ? enterprise.fields : []).map((field:any) => ({
+        label: cleanString(field.label) || cleanString(field.field),
+        canonicalValue: field.canonicalValue ?? null,
+        confidence: safeOptionalNumber(field.confidence),
+        sourceCount: safeNumber(field.sourceCount),
+        conflict: field.verificationState === "conflict",
+        reviewRequired: field.verificationState === "review_required" || enterprise.state !== "evidence_backed",
+        sourceReferences: (Array.isArray(enterprise.package?.evidence) ? enterprise.package.evidence : [])
+          .filter((item:any) => [field.winningEvidenceId,...(field.supportingEvidenceIds||[]),...(field.rejectedEvidenceIds||[])].includes(item.evidenceId))
+          .map((item:any) => `${item.documentId} p.${item.pageNumber}`),
+      })),
+      materialConflicts: (enterprise.package?.conflicts || []).map((item:any) => cleanString(item.fieldName)).filter(Boolean),
+      blockedReasons: Array.isArray(enterprise.blockedReasons) ? enterprise.blockedReasons : [],
+    }} : {}),
 
     factors: normalizeFactors(analysis),
   };

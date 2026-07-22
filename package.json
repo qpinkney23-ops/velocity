@@ -12,6 +12,7 @@
     "velocity:regression": "npx tsx scripts/velocityRegression.ts",
     "velocity:document-intake": "npx tsx scripts/velocityDocumentIntakeRegression.ts",
     "velocity:evidence-engine": "npx tsx scripts/velocityEvidenceEngineRegression.ts",
+    "velocity:enterprise-review": "npx tsx scripts/velocityEnterpriseReviewRegression.ts",
     "velocity:dti": "npx tsx scripts/velocityDtiRegression.ts",
     "velocity:math": "npx tsx scripts/velocityCanonicalMathematicsRegression.ts",
     "velocity:ratios": "npx tsx scripts/velocityUnderwritingRatioSemanticsRegression.ts",

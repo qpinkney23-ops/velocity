@@ -27,6 +27,8 @@ const rules: readonly Readonly<{ regex: RegExp; evidenceType: EvidenceType; fiel
   { regex: /(?:gross pay|gross income|monthly income|annual income|wages|income)\s*:\s*(\(?\$?[\d,]+(?:\.\d{1,2})?\)?)/gi, evidenceType: "income", fieldIdentifier: "income.amount", kind: "income_value" },
   { regex: /(?:account balance|ending balance|available balance|assets?)\s*:\s*(\(?\$?[\d,]+(?:\.\d{1,2})?\)?)/gi, evidenceType: "assets", fieldIdentifier: "assets.amount", kind: "currency" },
   { regex: /(?:monthly payment|balance owed|liabilit(?:y|ies))\s*:\s*(\(?\$?[\d,]+(?:\.\d{1,2})?\)?)/gi, evidenceType: "liabilities", fieldIdentifier: "liabilities.amount", kind: "currency" },
+  { regex: /(?:loan amount|base loan amount)\s*:\s*(\$?[\d,]+(?:\.\d{1,2})?)/gi, evidenceType: "purchase_contract", fieldIdentifier: "loan.amount", kind: "currency" },
+  { regex: /(?:proposed housing expense|pitia|total housing payment)\s*:\s*(\$?[\d,]+(?:\.\d{1,2})?)/gi, evidenceType: "property", fieldIdentifier: "housing.pitia", kind: "currency" },
   { regex: /(?:credit score|fico)\s*:\s*(\d{3})/gi, evidenceType: "credit", fieldIdentifier: "credit.score", kind: "text" },
   { regex: /(?:purchase price|property value|appraised value)\s*:\s*(\$?[\d,]+(?:\.\d{1,2})?)/gi, evidenceType: "property", fieldIdentifier: "property.value", kind: "property_value" },
   { regex: /(?:contract price|purchase agreement price)\s*:\s*(\$?[\d,]+(?:\.\d{1,2})?)/gi, evidenceType: "purchase_contract", fieldIdentifier: "purchase_contract.price", kind: "currency" },
