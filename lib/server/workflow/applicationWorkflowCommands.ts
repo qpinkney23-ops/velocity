@@ -23,6 +23,7 @@ type Failure = Readonly<{ ok: false; status: number; error: Readonly<{ code: str
 type CommandInput = Readonly<{ auth: ServerAuthContextV1; applicationId: string; body: unknown; injectAuditFailure?: boolean; injectDenialAuditFailure?: boolean }>;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const AUTHORITY_FIELDS = new Set(["tenantId", "role", "permission", "ownership", "createdBy", "updatedBy", "auditId", "path", "serverTimestamp"]);
+const SENSITIVE_NOTE_PATTERN=/\b\d{3}-?\d{2}-?\d{4}\b|\b(?:account|acct|routing)\s*(?:number|no\.?|#)?\s*[:=-]?\s*\d{6,}\b/i;
 const db = () => getFirestore(defaultAdminApp());
 const fail = (code: string, status: number, auth: ServerAuthContextV1): Failure => Object.freeze({ ok: false, status, error: Object.freeze({ code, message: "The workflow command could not be completed." }), requestId: auth.requestId, correlationId: auth.correlationId });
 
@@ -111,7 +112,7 @@ export async function executeApplicationWorkflowCommand(input: CommandInput) {
       } else if (body.commandType === "set_priority") {
         if (!PRIORITIES.includes(body.priority)) return {kind:"deny",code:"PRIORITY_INVALID"}; update.priority=body.priority;
       } else if (body.commandType === "add_workflow_note") {
-        if(typeof body.note!=="string"||!body.note.trim()||body.note.length>1000)return{kind:"deny",code:"NOTE_INVALID"};update.lastWorkflowNote=body.note.replace(/\r\n/g,"\n").trim();update.lastWorkflowNoteBy=authorized.context.authentication.principalId;
+        if(typeof body.note!=="string"||!body.note.trim()||body.note.length>1000||SENSITIVE_NOTE_PATTERN.test(body.note))return{kind:"deny",code:"NOTE_INVALID"};update.lastWorkflowNote=body.note.replace(/\r\n/g,"\n").trim();update.lastWorkflowNoteBy=authorized.context.authentication.principalId;
       } else if (body.commandType === "transition_workflow") {
         const transition=TRANSITIONS.find(t=>t.id===body.transitionId);if(!transition)return{kind:"deny",code:"WORKFLOW_TRANSITION_INVALID"};const documents=await tx.get(db().collection("applicationDocuments").where("applicationId","==",input.applicationId));const derived=deriveEnterpriseWorkflow({...current,id:input.applicationId,tenantId:authorized.context.tenantId,documentCount:documents.size});if(!derived.allowedTransitions.includes(transition.id))return{kind:"deny",code:"WORKFLOW_BLOCKED"};if(transition.reasonRequired&&(typeof body.reason!=="string"||!body.reason.trim()||body.reason.length>500))return{kind:"deny",code:"WORKFLOW_REASON_REQUIRED"};if(transition.assignmentRequired&&!current.underwriterId)return{kind:"deny",code:"ASSIGNMENT_REQUIRED"};update.enterpriseWorkflow={schemaVersion:"enterprise-loan-workflow.v1",lifecycleStage:transition.destination,enteredStageAt:new Date().toISOString(),transitionVersion:WORKFLOW_TRANSITION_VERSION};update.status=transition.destination;targetId=transition.id;
       } else if (body.commandType === "change_workflow_stage") {
