@@ -218,6 +218,20 @@ export async function renderUnderwritingPdf(params: {
     });
   }
 
+  if (report.analysisChangeSummary) {
+    const change=report.analysisChangeSummary;
+    section("Analysis Change Summary");
+    line(`Materiality: ${titleize(change.overallMateriality)} | Favorability: ${titleize(change.overallFavorability)}`,{bold:true});
+    line(`Total: ${change.counts.total} | Material: ${change.counts.material} | Critical: ${change.counts.critical} | Adverse: ${change.counts.adverse}`);
+    line(`Underwriter re-review: ${change.reReviewRequired?"Required":"Not required"}`,{bold:change.reReviewRequired,color:change.reReviewRequired?[0.7,0.08,0.08]:undefined});
+    paragraph(change.recommendedAction,{size:10});
+    change.materialChanges.slice(0,10).forEach((item,i)=>{
+      line(`${i+1}. ${titleize(item.category)} · ${titleize(item.entity)} [${titleize(item.materiality)}]`,{bold:true,size:10,gap:14});
+      paragraph(item.explanation,{size:9,indent:"   "});
+      paragraph(`Next action: ${item.recommendedAction}`,{size:9,indent:"   "});
+    });
+  }
+
   section("Decision Reason");
   paragraph(report.decision.reason || "—");
 

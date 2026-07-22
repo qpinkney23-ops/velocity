@@ -98,6 +98,16 @@ export type UnderwritingReport = {
     materialFindings: Array<{title:string;severity:string;disposition:string;summary:string;recommendedAction:string;sourceReferences:string[];conditionRef:string|null}>;
     blockedReasons: string[];
   };
+  analysisChangeSummary?: {
+    priorSnapshotId: string;
+    currentSnapshotId: string;
+    overallMateriality: string;
+    overallFavorability: string;
+    reReviewRequired: boolean;
+    recommendedAction: string;
+    counts: {total:number;material:number;critical:number;favorable:number;adverse:number;reviewRequired:number;blocking:number};
+    materialChanges: Array<{category:string;entity:string;materiality:string;favorability:string;explanation:string;recommendedAction:string}>;
+  };
 
   factors: {
     key?: string;
@@ -439,6 +449,7 @@ export function buildUnderwritingReport(
     normalizeCanonicalWorkflowConditions(analysis);
   const enterprise = (analysis as any)?.enterpriseEvidence;
   const mortgageReview = (analysis as any)?.mortgageReview;
+  const changeIntelligence = (analysis as any)?.changeIntelligence;
 
   const housingPaymentBreakdown = buildHousingPaymentBreakdown(
     analysis,
@@ -515,6 +526,16 @@ export function buildUnderwritingReport(
       counts:{critical:safeNumber(mortgageReview.summary?.critical),high:safeNumber(mortgageReview.summary?.high),medium:safeNumber(mortgageReview.summary?.medium),low:safeNumber(mortgageReview.summary?.low),blocking:safeNumber(mortgageReview.summary?.blocking),reviewRequired:safeNumber(mortgageReview.summary?.reviewRequired),conditionRequired:safeNumber(mortgageReview.summary?.conditionRequired)},
       materialFindings:(mortgageReview.findings||[]).filter((f:any)=>f.severity==="critical"||f.severity==="high"||f.reviewRequired).map((f:any)=>({title:cleanString(f.title),severity:cleanString(f.severity),disposition:cleanString(f.disposition),summary:cleanString(f.summary),recommendedAction:cleanString(f.recommendedAction),sourceReferences:(f.documents||[]).map((d:any)=>`${d.documentId}${d.pageNumber?` p.${d.pageNumber}`:""}`),conditionRef:f.generatedConditionRef||null})),
       blockedReasons:(mortgageReview.findings||[]).filter((f:any)=>f.blocking).map((f:any)=>cleanString(f.title)),
+    }}:{}) ,
+    ...(changeIntelligence ? {analysisChangeSummary:{
+      priorSnapshotId:cleanString(changeIntelligence.priorSnapshotId),
+      currentSnapshotId:cleanString(changeIntelligence.currentSnapshotId),
+      overallMateriality:cleanString(changeIntelligence.overallMateriality),
+      overallFavorability:cleanString(changeIntelligence.overallFavorability),
+      reReviewRequired:!!changeIntelligence.reReviewRequired,
+      recommendedAction:cleanString(changeIntelligence.recommendedAction),
+      counts:{total:safeNumber(changeIntelligence.summary?.total),material:safeNumber(changeIntelligence.summary?.material),critical:safeNumber(changeIntelligence.summary?.critical),favorable:safeNumber(changeIntelligence.summary?.favorable),adverse:safeNumber(changeIntelligence.summary?.adverse),reviewRequired:safeNumber(changeIntelligence.summary?.reviewRequired),blocking:safeNumber(changeIntelligence.summary?.blocking)},
+      materialChanges:(changeIntelligence.changes||[]).filter((item:any)=>item.materiality!=="immaterial").map((item:any)=>({category:cleanString(item.category),entity:cleanString(item.entityId),materiality:cleanString(item.materiality),favorability:cleanString(item.favorability),explanation:cleanString(item.explanation),recommendedAction:cleanString(item.recommendedAction)})),
     }}:{}) ,
 
     factors: normalizeFactors(analysis),
