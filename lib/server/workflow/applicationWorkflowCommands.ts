@@ -7,6 +7,7 @@ import { APPLICATION_ACTION_POLICIES } from "../authorization/applicationActionP
 import { authorizeApplicationAction } from "../authorization/applicationAuthorizationOrchestrator";
 import { permissionsForRole } from "../authorization/permissionPolicy";
 import {deriveEnterpriseWorkflow,PRIORITIES,TRANSITIONS,WORKFLOW_TRANSITION_VERSION} from "../../workflow/enterprisePipeline";
+import {AUTHORITY_REFRESH_MESSAGE,auditAuthorityRejection,enforceAuthorityInTransaction} from "../identity/identityAuthorityEnforcement";
 
 export const WORKFLOW_COMMAND_POLICY = Object.freeze({
   schemaVersion: "workflow-command-policy.v1",
@@ -25,12 +26,15 @@ const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const AUTHORITY_FIELDS = new Set(["tenantId", "role", "permission", "ownership", "createdBy", "updatedBy", "auditId", "path", "serverTimestamp"]);
 const SENSITIVE_NOTE_PATTERN=/\b\d{3}-?\d{2}-?\d{4}\b|\b(?:account|acct|routing)\s*(?:number|no\.?|#)?\s*[:=-]?\s*\d{6,}\b/i;
 const db = () => getFirestore(defaultAdminApp());
-const fail = (code: string, status: number, auth: ServerAuthContextV1): Failure => Object.freeze({ ok: false, status, error: Object.freeze({ code, message: "The workflow command could not be completed." }), requestId: auth.requestId, correlationId: auth.correlationId });
+const authorityCode=(code:string)=>code.includes("AUTHORITY")||code.includes("MEMBERSHIP")||code==="SESSION_AUTHORITY_STALE";
+const fail = (code: string, status: number, auth: ServerAuthContextV1): Failure => Object.freeze({ ok: false, status, error: Object.freeze({ code, message: authorityCode(code)?AUTHORITY_REFRESH_MESSAGE:"The workflow command could not be completed.",...(authorityCode(code)?{refreshRequired:true,recoverable:true}:{}) }), requestId: auth.requestId, correlationId: auth.correlationId });
+export const HIGH_RISK_WORKFLOW_COMMANDS=Object.freeze(["assign_underwriter","change_workflow_stage","create_condition","set_condition_status","remove_condition","replace_generated_conditions","update_borrower_verification","reset_after_documents_deleted","set_priority","transition_workflow"] as const);
+const highRisk=(type:string)=>(HIGH_RISK_WORKFLOW_COMMANDS as readonly string[]).includes(type);
 
 function parseCommand(body: unknown): Record<string, any> | undefined {
   if (!body || typeof body !== "object" || Array.isArray(body)) return;
   const raw = body as Record<string, any>;
-  const common = ["commandType", "idempotencyKey", "expectedVersion"];
+  const common = ["commandType", "idempotencyKey", "expectedVersion", "expectedMembershipVersion", "expectedAuthorizationVersion"];
   const fields: Record<string, readonly string[]> = {
     assign_underwriter: ["assigneeId"], change_workflow_stage: ["targetStage"], create_condition: ["label", "severity", "note"],
     set_condition_status: ["conditionId", "targetStatus"], remove_condition: ["conditionId"], replace_generated_conditions: ["generatedConditions"],
@@ -39,6 +43,7 @@ function parseCommand(body: unknown): Record<string, any> | undefined {
   const allowed = fields[raw.commandType];
   if (!allowed || Object.keys(raw).some(key => AUTHORITY_FIELDS.has(key) || ![...common, ...allowed].includes(key))) return;
   if (!SAFE_ID.test(raw.idempotencyKey || "") || !SAFE_ID.test(raw.expectedVersion || "")) return;
+  if(highRisk(raw.commandType)&&(!Number.isSafeInteger(raw.expectedMembershipVersion)||raw.expectedMembershipVersion<0||!SAFE_ID.test(raw.expectedAuthorizationVersion||"")))return;
   return raw;
 }
 
@@ -76,6 +81,7 @@ export async function executeApplicationWorkflowCommand(input: CommandInput) {
   if (!SAFE_ID.test(input.applicationId)) return fail("COMMAND_FAILED", 400, input.auth);
   const authorized = await authorizeApplicationAction({ authentication: input.auth, applicationId: input.applicationId, permission: "application.update", policy: APPLICATION_ACTION_POLICIES.update, evaluatedAt: new Date().toISOString() });
   if (!authorized.ok) return fail(authorized.publicError.code, authorized.publicError.status, input.auth);
+  const raw=input.body as any;if(raw&&highRisk(String(raw.commandType))&&(!Number.isSafeInteger(raw.expectedMembershipVersion)||typeof raw.expectedAuthorizationVersion!=="string")){await auditAuthorityRejection({auth:input.auth,tenantId:authorized.context.tenantId,commandType:String(raw.commandType),code:"AUTHORITY_VERSION_REQUIRED",applicationId:input.applicationId});return persistDenial(input,authorized.context.tenantId,"AUTHORITY_VERSION_REQUIRED",String(raw.commandType),permissionFor(String(raw.commandType)))}
   const body = parseCommand(input.body);
   if (!body) return persistDenial(input, authorized.context.tenantId, "COMMAND_FAILED", "invalid_request", "application.update");
   const permission = permissionFor(body.commandType);
@@ -86,7 +92,9 @@ export async function executeApplicationWorkflowCommand(input: CommandInput) {
   const appRef = db().doc(`applications/${input.applicationId}`);
   try {
     const result: any = await db().runTransaction(async tx => {
-      const [command, app] = await Promise.all([tx.get(commandRef), tx.get(appRef)]);
+      const checks:any[]=[tx.get(commandRef),tx.get(appRef)];if(highRisk(body.commandType))checks.push(enforceAuthorityInTransaction(tx,{tenantId:authorized.context.tenantId,userId:authorized.context.authentication.principalId,expected:{expectedMembershipVersion:body.expectedMembershipVersion,expectedAuthorizationVersion:body.expectedAuthorizationVersion}}));
+      const [command, app,actorAuthority] = await Promise.all(checks);
+      if(highRisk(body.commandType)&&!actorAuthority.ok)return {kind:"deny",code:actorAuthority.code,authority:true};
       if (command.exists) return command.data()?.fingerprint === fingerprint ? { kind: "retry", receipt: command.data()?.receipt } : { kind: "deny", code: "COMMAND_CONFLICT" };
       if (!app.exists || app.data()?.tenantId !== authorized.context.tenantId) return { kind: "deny", code: "RESOURCE_NOT_AVAILABLE" };
       const current = app.data()!;
@@ -159,7 +167,7 @@ export async function executeApplicationWorkflowCommand(input: CommandInput) {
       return { kind: "success", receipt };
     });
     if (result.kind === "retry") return { ok: true as const, status: 200, ...result.receipt, writeResult: "already_exists_identical" };
-    if (result.kind === "deny") return persistDenial(input, authorized.context.tenantId, result.code, body.commandType, permission, result.targetId);
+    if (result.kind === "deny"){if(result.authority)await auditAuthorityRejection({auth:input.auth,tenantId:authorized.context.tenantId,commandType:body.commandType,code:result.code,applicationId:input.applicationId});return persistDenial(input, authorized.context.tenantId, result.code, body.commandType, permission, result.targetId);}
     return { ok: true as const, status: 200, ...result.receipt, writeResult: "created" };
   } catch { return fail("COMMAND_FAILED", 500, input.auth); }
 }

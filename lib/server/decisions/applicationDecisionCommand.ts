@@ -7,19 +7,21 @@ import { APPLICATION_ACTION_POLICIES } from "../authorization/applicationActionP
 import { authorizeApplicationAction } from "../authorization/applicationAuthorizationOrchestrator";
 import { permissionsForRole } from "../authorization/permissionPolicy";
 import {DEFAULT_APPROVAL_POLICY,evaluateApprovalAuthority} from "../../governance/enterpriseGovernance";
+import {AUTHORITY_REFRESH_MESSAGE,auditAuthorityRejection,enforceAuthorityInTransaction,readAuthoritySnapshot} from "../identity/identityAuthorityEnforcement";
 
 export const DECISION_COMMAND_POLICY = Object.freeze({ schemaVersion: "application-decision-command-policy.v1", producerVersion: "application-decision-command.v1", status: "provisional_product_review_required", actions: Object.freeze(["approve", "deny"]), justificationByAction: Object.freeze({ approve: Object.freeze(["analysis_and_conditions_satisfied"]), deny: Object.freeze(["policy_requirements_not_met", "unresolved_material_evidence", "unacceptable_risk", "documentation_incomplete", "other"]) }), maximumNoteLength: 500 });
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const HASH = /^[a-f0-9]{64}$/;
 const db = () => getFirestore(defaultAdminApp());
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
-const fail = (code: string, status: number, auth: ServerAuthContextV1) => ({ ok: false as const, status, error: { code, message: "The final decision could not be completed." }, requestId: auth.requestId, correlationId: auth.correlationId });
+const fail = (code: string, status: number, auth: ServerAuthContextV1) => ({ ok: false as const, status, error: { code, message: code.includes("AUTHORITY")||code.includes("MEMBERSHIP")?AUTHORITY_REFRESH_MESSAGE:"The final decision could not be completed.", ...(code.includes("AUTHORITY")||code.includes("MEMBERSHIP")?{refreshRequired:true,recoverable:true}: {}) }, requestId: auth.requestId, correlationId: auth.correlationId });
 type Input = Readonly<{ auth: ServerAuthContextV1; applicationId: string; body: unknown; injectSuccessAuditFailure?: boolean; injectDenialAuditFailure?: boolean }>;
 
 function parse(body: unknown) {
   if (!body || typeof body !== "object" || Array.isArray(body)) return;
-  const raw = body as Record<string, any>, allowed = ["action", "justificationCode", "note", "expectedWorkflowVersion", "expectedDecisionVersion", "expectedAnalysisId", "expectedAnalysisVersion", "expectedAnalysisOutputFingerprint", "expectedEvidenceAggregationFingerprint", "idempotencyKey"];
+  const raw = body as Record<string, any>, allowed = ["action", "justificationCode", "note", "expectedWorkflowVersion", "expectedDecisionVersion", "expectedAnalysisId", "expectedAnalysisVersion", "expectedAnalysisOutputFingerprint", "expectedEvidenceAggregationFingerprint", "expectedMembershipVersion", "expectedAuthorizationVersion", "expectedApprovalAuthorityVersion", "idempotencyKey"];
   if (Object.keys(raw).some(key => !allowed.includes(key)) || !DECISION_COMMAND_POLICY.actions.includes(raw.action) || !SAFE_ID.test(raw.idempotencyKey || "") || !SAFE_ID.test(raw.expectedWorkflowVersion || "") || !Number.isInteger(raw.expectedDecisionVersion) || raw.expectedDecisionVersion < 0 || !SAFE_ID.test(raw.expectedAnalysisId || "") || !SAFE_ID.test(raw.expectedAnalysisVersion || "") || !HASH.test(raw.expectedAnalysisOutputFingerprint || "") || !HASH.test(raw.expectedEvidenceAggregationFingerprint || "")) return;
+  if (!Number.isSafeInteger(raw.expectedMembershipVersion)||raw.expectedMembershipVersion<0||!SAFE_ID.test(raw.expectedAuthorizationVersion||"")||!SAFE_ID.test(raw.expectedApprovalAuthorityVersion||"")) return;
   if (typeof raw.justificationCode !== "string" || !(DECISION_COMMAND_POLICY.justificationByAction as any)[raw.action].includes(raw.justificationCode)) return;
   if (raw.note !== undefined && (typeof raw.note !== "string" || raw.note.trim().length > DECISION_COMMAND_POLICY.maximumNoteLength)) return;
   return { ...raw, note: typeof raw.note === "string" ? raw.note.trim() : undefined } as Record<string, any>;
@@ -52,14 +54,16 @@ async function analysisFacts(tenantId: string, applicationId: string) {
 export async function readApplicationDecisionContext(input: { auth: ServerAuthContextV1; applicationId: string }) {
   if (!SAFE_ID.test(input.applicationId)) return fail("RESOURCE_NOT_AVAILABLE", 404, input.auth);
   const allowed = await authorize(input.auth, input.applicationId); if (!allowed.ok) return fail(allowed.publicError.code, allowed.publicError.status, input.auth);
-  const [app, analysis, decision] = await Promise.all([db().doc(`applications/${input.applicationId}`).get(), analysisFacts(allowed.context.tenantId, input.applicationId), db().doc(`tenants/${allowed.context.tenantId}/applications/${input.applicationId}/decisionState/current`).get()]);
-  if (!app.exists || !analysis) return fail("ANALYSIS_NOT_AVAILABLE", 409, input.auth);
-  return { ok: true as const, status: 200, expectedWorkflowVersion: app.data()?.workflowVersion || app.data()?.authorizationVersion, expectedDecisionVersion: decision.exists ? Number(decision.data()?.decisionVersion) : 0, expectedAnalysisId: analysis.state.commandId, expectedAnalysisVersion: analysis.state.analysisVersion, expectedAnalysisOutputFingerprint: analysis.outputFingerprint, expectedEvidenceAggregationFingerprint: analysis.state.evidenceAggregationFingerprint, requestId: input.auth.requestId, correlationId: input.auth.correlationId };
+  const userId=allowed.context.authentication.principalId;
+  const [app, analysis, decision,authority] = await Promise.all([db().doc(`applications/${input.applicationId}`).get(), analysisFacts(allowed.context.tenantId, input.applicationId), db().doc(`tenants/${allowed.context.tenantId}/applications/${input.applicationId}/decisionState/current`).get(),readAuthoritySnapshot(allowed.context.tenantId,userId)]);
+  if (!app.exists || !analysis) return fail("ANALYSIS_NOT_AVAILABLE", 409, input.auth);if(!authority||authority.membershipStatus!=="active")return fail("MEMBERSHIP_INACTIVE",403,input.auth);
+  return { ok: true as const, status: 200, expectedWorkflowVersion: app.data()?.workflowVersion || app.data()?.authorizationVersion, expectedDecisionVersion: decision.exists ? Number(decision.data()?.decisionVersion) : 0, expectedAnalysisId: analysis.state.commandId, expectedAnalysisVersion: analysis.state.analysisVersion, expectedAnalysisOutputFingerprint: analysis.outputFingerprint, expectedEvidenceAggregationFingerprint: analysis.state.evidenceAggregationFingerprint, expectedMembershipVersion:authority.membershipVersion,expectedAuthorizationVersion:authority.authorizationVersion,approvalAuthorityVersions:authority.approvalAuthorityVersions, requestId: input.auth.requestId, correlationId: input.auth.correlationId };
 }
 
 export async function executeApplicationDecisionCommand(input: Input) {
   if (!SAFE_ID.test(input.applicationId)) return fail("RESOURCE_NOT_AVAILABLE", 404, input.auth);
   const allowed = await authorize(input.auth, input.applicationId); if (!allowed.ok) return fail(allowed.publicError.code, allowed.publicError.status, input.auth);
+  const raw=input.body as any;if(!raw||!Number.isSafeInteger(raw.expectedMembershipVersion)||typeof raw.expectedAuthorizationVersion!=="string"||typeof raw.expectedApprovalAuthorityVersion!=="string"){await auditAuthorityRejection({auth:input.auth,tenantId:allowed.context.tenantId,commandType:"decision.invalid",code:"AUTHORITY_VERSION_REQUIRED",applicationId:input.applicationId});return denial(input,allowed.context.tenantId,"AUTHORITY_VERSION_REQUIRED","invalid_request","decision.approve")}
   const body = parse(input.body); if (!body) return denial(input, allowed.context.tenantId, "JUSTIFICATION_INVALID", "invalid_request", "application.read");
   const permission = body.action === "approve" ? "decision.approve" : "decision.deny";
   const authority=evaluateApprovalAuthority({role:allowed.context.role,action:body.action,policy:DEFAULT_APPROVAL_POLICY});if(!authority.allowed)return denial(input,allowed.context.tenantId,authority.reason,body.action,permission);
@@ -69,7 +73,8 @@ export async function executeApplicationDecisionCommand(input: Input) {
   const commandRef = db().doc(`tenants/${allowed.context.tenantId}/applications/${input.applicationId}/decisionCommands/${body.idempotencyKey}`), appRef = db().doc(`applications/${input.applicationId}`), stateRef = db().doc(`tenants/${allowed.context.tenantId}/applications/${input.applicationId}/decisionState/current`);
   try {
     const result: any = await db().runTransaction(async tx => {
-      const [command, app, state, analysisState, analysisCommand] = await Promise.all([tx.get(commandRef), tx.get(appRef), tx.get(stateRef), tx.get(db().doc(`tenants/${allowed.context.tenantId}/applications/${input.applicationId}/analysisState/current`)), tx.get(analysis.commandRef)]);
+      const [command, app, state, analysisState, analysisCommand,actorAuthority] = await Promise.all([tx.get(commandRef), tx.get(appRef), tx.get(stateRef), tx.get(db().doc(`tenants/${allowed.context.tenantId}/applications/${input.applicationId}/analysisState/current`)), tx.get(analysis.commandRef),enforceAuthorityInTransaction(tx,{tenantId:allowed.context.tenantId,userId:allowed.context.authentication.principalId,expected:{expectedMembershipVersion:body.expectedMembershipVersion,expectedAuthorizationVersion:body.expectedAuthorizationVersion,expectedApprovalAuthorityVersion:body.expectedApprovalAuthorityVersion},action:body.action})]);
+      if(!actorAuthority.ok)return {kind:"deny",code:actorAuthority.code,authority:true};
       if (command.exists) return command.data()?.fingerprint === fingerprint ? { kind: "retry", receipt: command.data()?.receipt } : { kind: "deny", code: "COMMAND_CONFLICT" };
       if (!app.exists || app.data()?.tenantId !== allowed.context.tenantId) return { kind: "deny", code: "RESOURCE_NOT_AVAILABLE" };
       const appData = app.data()!, workflowVersion = appData.workflowVersion || appData.authorizationVersion, decisionVersion = state.exists ? Number(state.data()?.decisionVersion) : 0;
@@ -93,7 +98,7 @@ export async function executeApplicationDecisionCommand(input: Input) {
       return { kind: "success", receipt };
     });
     if (result.kind === "retry") return { ok: true as const, status: 200, ...result.receipt, writeResult: "already_exists_identical" };
-    if (result.kind === "deny") return denial(input, allowed.context.tenantId, result.code, body.action, permission);
+    if (result.kind === "deny"){if(result.authority)await auditAuthorityRejection({auth:input.auth,tenantId:allowed.context.tenantId,commandType:`decision.${body.action}`,code:result.code,applicationId:input.applicationId});return denial(input, allowed.context.tenantId, result.code, body.action, permission);}
     return { ok: true as const, status: 201, ...result.receipt, writeResult: "created" };
   } catch { return fail("DECISION_FAILED", 500, input.auth); }
 }

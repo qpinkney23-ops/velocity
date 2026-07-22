@@ -2218,7 +2218,7 @@ export default function ApplicationDetailPage() {
         if (!contextResponse.ok || !context?.ok) throw new Error(context?.error?.message || "Decision context is not available.");
         response = await fetch(`/api/applications/${id}/decision`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "approve", justificationCode: "analysis_and_conditions_satisfied", expectedWorkflowVersion: context.expectedWorkflowVersion, expectedDecisionVersion: context.expectedDecisionVersion, expectedAnalysisId: context.expectedAnalysisId, expectedAnalysisVersion: context.expectedAnalysisVersion, expectedAnalysisOutputFingerprint: context.expectedAnalysisOutputFingerprint, expectedEvidenceAggregationFingerprint: context.expectedEvidenceAggregationFingerprint, idempotencyKey: crypto.randomUUID() }) });
       } else {
-        response = await fetch(`/api/applications/${id}/workflow`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ commandType: "change_workflow_stage", targetStage: statusDraft, expectedVersion: (app as any)?.workflowVersion || (app as any)?.authorizationVersion, idempotencyKey: crypto.randomUUID() }) });
+        response = await fetch(`/api/applications/${id}/workflow`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ commandType: "change_workflow_stage", targetStage: statusDraft, expectedVersion: (app as any)?.workflowVersion || (app as any)?.authorizationVersion, expectedMembershipVersion:(app as any)?.authority?.membershipVersion,expectedAuthorizationVersion:(app as any)?.authority?.authorizationVersion,idempotencyKey: crypto.randomUUID() }) });
       }
       if (!response.ok) throw new Error((await response.json().catch(() => null))?.error?.message || "Status update failed.");
       toast({ type: "success", title: "Status saved", message: `Set to "${statusDraft}"` });
@@ -2238,7 +2238,7 @@ export default function ApplicationDetailPage() {
 
   async function saveUnderwriter() {
     try {
-      if(!uwDraft)throw new Error("Choose an underwriter.");const response=await fetch(`/api/applications/${id}/workflow`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({commandType:"assign_underwriter",assigneeId:uwDraft,expectedVersion:(app as any)?.workflowVersion||(app as any)?.authorizationVersion,idempotencyKey:crypto.randomUUID()})});if(!response.ok)throw new Error((await response.json().catch(()=>null))?.error?.message||"Assignment failed.");
+      if(!uwDraft)throw new Error("Choose an underwriter.");const response=await fetch(`/api/applications/${id}/workflow`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({commandType:"assign_underwriter",assigneeId:uwDraft,expectedVersion:(app as any)?.workflowVersion||(app as any)?.authorizationVersion,expectedMembershipVersion:(app as any)?.authority?.membershipVersion,expectedAuthorizationVersion:(app as any)?.authority?.authorizationVersion,idempotencyKey:crypto.randomUUID()})});if(!response.ok)throw new Error((await response.json().catch(()=>null))?.error?.message||"Assignment failed.");
       toast({ type: "success", title: "Underwriter assigned" });
     } catch (e: any) {
       toast({ type: "error", title: "Assignment failed", message: e?.message ?? "Unknown error" });
@@ -2285,7 +2285,7 @@ export default function ApplicationDetailPage() {
       for (const d of storedDocs) {
         const response=await fetch(`/api/applications/${id}/documents/${d.documentId}`,{method:"DELETE"});if(!response.ok)throw new Error("Delete failed.");
       }
-      const reset=await fetch(`/api/applications/${id}/workflow`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({commandType:"reset_after_documents_deleted",expectedVersion:(app as any)?.workflowVersion||(app as any)?.authorizationVersion,idempotencyKey:crypto.randomUUID()})});if(!reset.ok)throw new Error((await reset.json().catch(()=>null))?.error?.message||"Reset failed.");
+      const reset=await fetch(`/api/applications/${id}/workflow`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({commandType:"reset_after_documents_deleted",expectedVersion:(app as any)?.workflowVersion||(app as any)?.authorizationVersion,expectedMembershipVersion:(app as any)?.authority?.membershipVersion,expectedAuthorizationVersion:(app as any)?.authority?.authorizationVersion,idempotencyKey:crypto.randomUUID()})});if(!reset.ok)throw new Error((await reset.json().catch(()=>null))?.error?.message||"Reset failed.");
       await refreshCanonicalDocuments();
 
       setLastScanDiagnostics(null);
@@ -2310,11 +2310,11 @@ export default function ApplicationDetailPage() {
     const response = await fetch(`/api/applications/${id}/workflow`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ commandType, generatedConditions: generatedConditionProjection(generated), ...extra, expectedVersion: (app as any)?.workflowVersion || (app as any)?.authorizationVersion, idempotencyKey: crypto.randomUUID() }),
+      body: JSON.stringify({ commandType, generatedConditions: generatedConditionProjection(generated), ...extra, expectedVersion: (app as any)?.workflowVersion || (app as any)?.authorizationVersion,expectedMembershipVersion:(app as any)?.authority?.membershipVersion,expectedAuthorizationVersion:(app as any)?.authority?.authorizationVersion, idempotencyKey: crypto.randomUUID() }),
     });
     if (!response.ok) throw new Error((await response.json().catch(() => null))?.error?.message || "Condition command failed.");
   }
-  async function workflowCommand(commandType:string,payload:Record<string,unknown>){if(workflowBusy)return;setWorkflowBusy(true);try{const response=await fetch(`/api/applications/${id}/workflow`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({commandType,...payload,expectedVersion:(app as any)?.workflowVersion||(app as any)?.authorizationVersion,idempotencyKey:crypto.randomUUID()})});const result=await response.json().catch(()=>null);if(!response.ok)throw new Error(result?.error?.message||"Workflow action failed.");setApp(current=>current?{...current,workflowVersion:result.newVersion,...(commandType==="set_priority"?{priority:payload.priority}:{}),...(commandType==="transition_workflow"?{enterpriseWorkflow:{lifecycleStage:(payload as any).transitionId}}:{})} as any:current);toast({type:"success",title:"Workflow updated",message:"The authorized workflow action was recorded."})}catch(e:any){toast({type:"error",title:"Workflow action rejected",message:e?.message||"The workflow action was not allowed."})}finally{setWorkflowBusy(false)}}
+  async function workflowCommand(commandType:string,payload:Record<string,unknown>){if(workflowBusy)return;setWorkflowBusy(true);try{const response=await fetch(`/api/applications/${id}/workflow`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({commandType,...payload,expectedVersion:(app as any)?.workflowVersion||(app as any)?.authorizationVersion,expectedMembershipVersion:(app as any)?.authority?.membershipVersion,expectedAuthorizationVersion:(app as any)?.authority?.authorizationVersion,idempotencyKey:crypto.randomUUID()})});const result=await response.json().catch(()=>null);if(!response.ok)throw new Error(result?.error?.message||"Workflow action failed.");setApp(current=>current?{...current,workflowVersion:result.newVersion,...(commandType==="set_priority"?{priority:payload.priority}:{}),...(commandType==="transition_workflow"?{enterpriseWorkflow:{lifecycleStage:(payload as any).transitionId}}:{})} as any:current);toast({type:"success",title:"Workflow updated",message:"The authorized workflow action was recorded."})}catch(e:any){toast({type:"error",title:"Workflow action rejected",message:`${e?.message||"The workflow action was not allowed."} The application was refreshed; the command was not retried.`});await fetchApplicationDetail(id).then(({application})=>setApp(application as any)).catch(()=>{})}finally{setWorkflowBusy(false)}}
 
   async function runAiScan() {
     if (scanning) return;
@@ -2505,7 +2505,7 @@ export default function ApplicationDetailPage() {
     }
 
     try {
-      const res = await fetch(`/api/applications/${id}/workflow`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({commandType:"create_condition",label,severity:manualSeverity,...(evidence?{note:evidence}:{}),expectedVersion:(app as any)?.workflowVersion||(app as any)?.authorizationVersion,idempotencyKey:crypto.randomUUID()})});
+      const res = await fetch(`/api/applications/${id}/workflow`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({commandType:"create_condition",label,severity:manualSeverity,...(evidence?{note:evidence}:{}),expectedVersion:(app as any)?.workflowVersion||(app as any)?.authorizationVersion,expectedMembershipVersion:(app as any)?.authority?.membershipVersion,expectedAuthorizationVersion:(app as any)?.authority?.authorizationVersion,idempotencyKey:crypto.randomUUID()})});
       if(!res.ok)throw new Error((await res.json().catch(()=>null))?.error?.message||"Condition command failed.");
       setManualLabel("");
       setManualSeverity("med");
@@ -2519,7 +2519,7 @@ export default function ApplicationDetailPage() {
 
   async function removeManualCondition(condId: string) {
     try {
-      const res = await fetch(`/api/applications/${id}/workflow`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({commandType:"remove_condition",conditionId:condId,expectedVersion:(app as any)?.workflowVersion||(app as any)?.authorizationVersion,idempotencyKey:crypto.randomUUID()})});
+      const res = await fetch(`/api/applications/${id}/workflow`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({commandType:"remove_condition",conditionId:condId,expectedVersion:(app as any)?.workflowVersion||(app as any)?.authorizationVersion,expectedMembershipVersion:(app as any)?.authority?.membershipVersion,expectedAuthorizationVersion:(app as any)?.authority?.authorizationVersion,idempotencyKey:crypto.randomUUID()})});
       if(!res.ok)throw new Error((await res.json().catch(()=>null))?.error?.message||"Condition command failed.");
       toast({ type: "success", title: "Manual condition removed" });
     } catch (e: any) {
@@ -2663,7 +2663,7 @@ export default function ApplicationDetailPage() {
       if (!target) return;
 
       const nextStatus: UWCondition["status"] = target.status === "done" ? "open" : "done";
-      const res = await fetch(`/api/applications/${id}/workflow`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({commandType:"set_condition_status",conditionId:condId,targetStatus:nextStatus,expectedVersion:(app as any)?.workflowVersion||(app as any)?.authorizationVersion,idempotencyKey:crypto.randomUUID()})});
+      const res = await fetch(`/api/applications/${id}/workflow`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({commandType:"set_condition_status",conditionId:condId,targetStatus:nextStatus,expectedVersion:(app as any)?.workflowVersion||(app as any)?.authorizationVersion,expectedMembershipVersion:(app as any)?.authority?.membershipVersion,expectedAuthorizationVersion:(app as any)?.authority?.authorizationVersion,idempotencyKey:crypto.randomUUID()})});
       if(!res.ok)throw new Error((await res.json().catch(()=>null))?.error?.message||"Condition command failed.");
     } catch (e: any) {
       toast({ type: "error", title: "Update failed", message: e?.message ?? "Unknown error" });

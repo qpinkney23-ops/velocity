@@ -10,6 +10,7 @@
     "lint": "next lint",
     "velocity:replay": "npx tsx scripts/velocityReplay.ts",
     "velocity:regression": "npx tsx scripts/velocityRegression.ts",
+    "velocity:authority-enforcement-regression": "npx tsx scripts/velocityAuthorityEnforcementRegression.ts",
     "velocity:document-intake": "npx tsx scripts/velocityDocumentIntakeRegression.ts",
     "velocity:evidence-engine": "npx tsx scripts/velocityEvidenceEngineRegression.ts",
     "velocity:enterprise-review": "npx tsx scripts/velocityEnterpriseReviewRegression.ts",
