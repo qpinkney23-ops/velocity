@@ -6,6 +6,7 @@ import { defaultAdminApp } from "../auth/firebaseAdminAuthAdapter";
 import { APPLICATION_ACTION_POLICIES } from "../authorization/applicationActionPolicies";
 import { authorizeApplicationAction } from "../authorization/applicationAuthorizationOrchestrator";
 import { permissionsForRole } from "../authorization/permissionPolicy";
+import {deriveEnterpriseWorkflow,PRIORITIES,TRANSITIONS,WORKFLOW_TRANSITION_VERSION} from "../../workflow/enterprisePipeline";
 
 export const WORKFLOW_COMMAND_POLICY = Object.freeze({
   schemaVersion: "workflow-command-policy.v1",
@@ -32,7 +33,7 @@ function parseCommand(body: unknown): Record<string, any> | undefined {
   const fields: Record<string, readonly string[]> = {
     assign_underwriter: ["assigneeId"], change_workflow_stage: ["targetStage"], create_condition: ["label", "severity", "note"],
     set_condition_status: ["conditionId", "targetStatus"], remove_condition: ["conditionId"], replace_generated_conditions: ["generatedConditions"],
-    update_borrower_verification: ["field", "action", "generatedConditions"], update_notes: ["notes"], reset_after_documents_deleted: [],
+    update_borrower_verification: ["field", "action", "generatedConditions"], update_notes: ["notes"], reset_after_documents_deleted: [], set_priority:["priority"], add_workflow_note:["note"], transition_workflow:["transitionId","reason"],
   };
   const allowed = fields[raw.commandType];
   if (!allowed || Object.keys(raw).some(key => AUTHORITY_FIELDS.has(key) || ![...common, ...allowed].includes(key))) return;
@@ -55,7 +56,7 @@ function validateGeneratedConditions(value: unknown) {
   return result;
 }
 
-const permissionFor = (type: string) => type === "assign_underwriter" ? "assignment.manage" : type === "change_workflow_stage" ? "queue.manage" : type === "update_borrower_verification" ? "evidence.review" : type === "update_notes" || type === "reset_after_documents_deleted" ? "application.update" : "condition.manage";
+const permissionFor = (type: string) => type === "assign_underwriter" ? "assignment.manage" : type === "change_workflow_stage" || type === "transition_workflow" || type === "set_priority" || type === "add_workflow_note" ? "queue.manage" : type === "update_borrower_verification" ? "evidence.review" : type === "update_notes" || type === "reset_after_documents_deleted" ? "application.update" : "condition.manage";
 
 async function persistDenial(input: CommandInput, tenantId: string, reasonCode: string, commandType: string, permission: string, targetId?: string): Promise<Failure> {
   if (input.injectDenialAuditFailure) return fail("AUDIT_REQUIRED", 500, input.auth);
@@ -106,7 +107,13 @@ export async function executeApplicationWorkflowCommand(input: CommandInput) {
         if (!SAFE_ID.test(body.assigneeId || "")) return { kind: "deny", code: "ASSIGNEE_NOT_AVAILABLE" };
         const member = await tx.get(db().doc(`tenants/${authorized.context.tenantId}/members/${body.assigneeId}`));
         if (!member.exists || member.data()?.membershipStatus !== "active" || member.data()?.role !== "underwriter") return { kind: "deny", code: "ASSIGNEE_NOT_AVAILABLE", targetId: body.assigneeId };
-        update.underwriterId = body.assigneeId; update.underwriterName = "";
+        update.underwriterId = body.assigneeId; update.underwriterName = ""; update.assignment={kind:"user",userId:body.assigneeId,displayName:null,role:"underwriter",assignedAt:new Date().toISOString(),assignedBy:authorized.context.authentication.principalId,source:"manual"};
+      } else if (body.commandType === "set_priority") {
+        if (!PRIORITIES.includes(body.priority)) return {kind:"deny",code:"PRIORITY_INVALID"}; update.priority=body.priority;
+      } else if (body.commandType === "add_workflow_note") {
+        if(typeof body.note!=="string"||!body.note.trim()||body.note.length>1000)return{kind:"deny",code:"NOTE_INVALID"};update.lastWorkflowNote=body.note.replace(/\r\n/g,"\n").trim();update.lastWorkflowNoteBy=authorized.context.authentication.principalId;
+      } else if (body.commandType === "transition_workflow") {
+        const transition=TRANSITIONS.find(t=>t.id===body.transitionId);if(!transition)return{kind:"deny",code:"WORKFLOW_TRANSITION_INVALID"};const documents=await tx.get(db().collection("applicationDocuments").where("applicationId","==",input.applicationId));const derived=deriveEnterpriseWorkflow({...current,id:input.applicationId,tenantId:authorized.context.tenantId,documentCount:documents.size});if(!derived.allowedTransitions.includes(transition.id))return{kind:"deny",code:"WORKFLOW_BLOCKED"};if(transition.reasonRequired&&(typeof body.reason!=="string"||!body.reason.trim()||body.reason.length>500))return{kind:"deny",code:"WORKFLOW_REASON_REQUIRED"};if(transition.assignmentRequired&&!current.underwriterId)return{kind:"deny",code:"ASSIGNMENT_REQUIRED"};update.enterpriseWorkflow={schemaVersion:"enterprise-loan-workflow.v1",lifecycleStage:transition.destination,enteredStageAt:new Date().toISOString(),transitionVersion:WORKFLOW_TRANSITION_VERSION};update.status=transition.destination;targetId=transition.id;
       } else if (body.commandType === "change_workflow_stage") {
         if (!WORKFLOW_COMMAND_POLICY.workflowStates.includes(body.targetStage)) return { kind: "deny", code: "WORKFLOW_TRANSITION_INVALID" };
         const prior = current.status || "New"; const allowed: any = { New: ["UW Review"], "UW Review": ["New", "Conditions"], Conditions: ["UW Review"] };
@@ -147,6 +154,7 @@ export async function executeApplicationWorkflowCommand(input: CommandInput) {
       tx.update(appRef, update);
       tx.create(commandRef, { schemaVersion: "workflow-command.v1", fingerprint, status: "completed", receipt });
       tx.create(db().doc(`tenants/${authorized.context.tenantId}/applications/${input.applicationId}/workflowAuditEvents/${receipt.commandId}`), { action: body.commandType, applicationId: input.applicationId, previousVersion: version, newVersion: nextVersion, targetId: targetId || null, requestId: input.auth.requestId, correlationId: input.auth.correlationId, piiPresent: false, createdAt: new Date() });
+      tx.create(db().doc(`tenants/${authorized.context.tenantId}/applications/${input.applicationId}/workflowEvents/${receipt.commandId}`), {schemaVersion:"enterprise-workflow-event.v1",eventId:receipt.commandId,applicationId:input.applicationId,tenantId:authorized.context.tenantId,eventType:body.commandType,previousVersion:version,nextVersion,actorId:authorized.context.authentication.principalId,actorType:"firebase_user",reason:typeof body.reason==="string"?body.reason.trim():null,note:body.commandType==="add_workflow_note"?update.lastWorkflowNote:null,relatedConditionIds:[],relatedReviewFindingIds:[],idempotencyKey:body.idempotencyKey,workflowVersion:"enterprise-loan-workflow.v1",piiPresent:false,createdAt:new Date()});
       return { kind: "success", receipt };
     });
     if (result.kind === "retry") return { ok: true as const, status: 200, ...result.receipt, writeResult: "already_exists_identical" };

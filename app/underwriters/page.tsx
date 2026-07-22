@@ -2,12 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { fetchApplicationPages } from "@/lib/applicationReadClient";
+import Link from "next/link";
+import {queueItem} from "@/lib/workflow/enterprisePipeline";
 
 export default function UnderwritersPage() {
   const [underwriters, setUnderwriters] = useState<any[]>([]);
+  const [applications,setApplications]=useState<any[]>([]);
 
   useEffect(() => {
-    let active=true;const load=()=>fetchApplicationPages(1).then(({assignees})=>{if(active)setUnderwriters(assignees)});void load();const timer=setInterval(load,15000);return()=>{active=false;clearInterval(timer)};
+    let active=true;const load=()=>fetchApplicationPages().then(({assignees,applications})=>{if(active){setUnderwriters(assignees);setApplications(applications)}});void load();const timer=setInterval(load,15000);return()=>{active=false;clearInterval(timer)};
   }, []);
 
   return (
@@ -24,6 +27,7 @@ export default function UnderwritersPage() {
         <h2 className="font-semibold text-sm">Tenant assignment directory</h2>
         <p className="text-sm text-gray-500">Eligibility is derived from active tenant memberships. New underwriters require governed identity and membership provisioning.</p>
       </div>
+      <div className="grid md:grid-cols-4 gap-3">{[["Assigned to team",applications.filter(a=>a.underwriterId).length],["Unassigned review-ready",applications.map(a=>queueItem({...a,scan:a.workflowFacts})).filter(x=>x.stage==="ready_for_underwriter"&&x.owner==="Unassigned").length],["In review",applications.map(a=>queueItem({...a,scan:a.workflowFacts})).filter(x=>x.status==="in_review").length],["Blocked",applications.map(a=>queueItem({...a,scan:a.workflowFacts})).filter(x=>x.blockingCount>0).length]].map(([label,value])=><Link href="/queue" key={String(label)} className="bg-white p-4 rounded-xl border shadow-sm"><div className="text-xs text-gray-500">{label}</div><div className="text-2xl font-semibold mt-1">{value}</div></Link>)}</div>
 
       {/* List */}
       <div className="bg-white p-6 rounded-xl border shadow-sm">

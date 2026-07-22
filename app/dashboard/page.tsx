@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { fetchApplicationPages } from "@/lib/applicationReadClient";
+import {queueItem,workflowMetrics} from "@/lib/workflow/enterprisePipeline";
 
 type AppDoc = {
   id: string;
@@ -348,6 +349,7 @@ export default function DashboardPage() {
       assignmentRate,
     };
   }, [apps]);
+  const workflowKpis=useMemo(()=>workflowMetrics(apps.map(a=>queueItem({...a,scan:(a as any).workflowFacts}))),[apps]);
 
   const stuck = useMemo(() => {
     return apps
@@ -440,6 +442,10 @@ export default function DashboardPage() {
           </div>
 
           <div className="grid xl:grid-cols-4 md:grid-cols-2 gap-3 mt-6">
+            <div className="rounded-2xl border bg-white/85 p-4 shadow-sm"><div className="text-xs v-muted">Ready for Underwriter</div><div className="text-2xl font-semibold mt-1">{workflowKpis.readyForUnderwriter}</div></div>
+            <div className="rounded-2xl border bg-white/85 p-4 shadow-sm"><div className="text-xs v-muted">Blocked / Review</div><div className="text-2xl font-semibold mt-1">{workflowKpis.blocked} / {workflowKpis.reviewRequired}</div></div>
+            <div className="rounded-2xl border bg-white/85 p-4 shadow-sm"><div className="text-xs v-muted">SLA Approaching</div><div className="text-2xl font-semibold mt-1">{workflowKpis.slaApproaching}</div></div>
+            <div className="rounded-2xl border bg-white/85 p-4 shadow-sm"><div className="text-xs v-muted">SLA Breached</div><div className="text-2xl font-semibold mt-1">{workflowKpis.slaBreached}</div><Link href="/queue" className="text-xs text-blue-700">Open prioritized queue</Link></div>
             <div className="rounded-2xl border bg-white/85 p-5 shadow-sm" style={{ borderColor: "var(--v-border)" }}>
               <div className="flex items-start justify-between gap-3">
                 <div>

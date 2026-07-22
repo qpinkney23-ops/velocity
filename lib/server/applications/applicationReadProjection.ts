@@ -7,8 +7,8 @@ import { permissionsForRole } from "../authorization/permissionPolicy";
 import type { ServerAuthContextV1 } from "../../contracts/serverAuth";
 
 const PAGE_DEFAULT = 80, PAGE_MAX = 100, FALLBACK_SCAN_MAX = 1000;
-const LIST_FIELDS = ["borrowerName","email","loanNumber","loanAmount","status","underwriterId","assignedUnderwriterId","borrowerProfileVerified","uwConditions","conditions","workflowVersion","authorizationVersion","createdAt","updatedAt"] as const;
-const DETAIL_FIELDS = ["borrowerName","email","loanNumber","loanAmount","status","underwriterId","assignedUnderwriterId","notes","scan","borrowerProfile","borrowerProfileVerified","uwConditions","conditions","workflowVersion","authorizationVersion","createdAt","updatedAt"] as const;
+const LIST_FIELDS = ["borrowerName","email","loanNumber","loanAmount","status","underwriterId","underwriterName","assignedUnderwriterId","borrowerProfileVerified","uwConditions","conditions","workflowVersion","authorizationVersion","priority","dueDate","enterpriseWorkflow","workflowFacts","documentCount","documentProcessingStatus","createdAt","updatedAt"] as const;
+const DETAIL_FIELDS = ["borrowerName","email","loanNumber","loanAmount","status","underwriterId","underwriterName","assignedUnderwriterId","notes","scan","borrowerProfile","borrowerProfileVerified","uwConditions","conditions","workflowVersion","authorizationVersion","priority","dueDate","enterpriseWorkflow","workflowFacts","documentCount","documentProcessingStatus","createdAt","updatedAt"] as const;
 type Cursor = Readonly<{ tenantId:string; updatedAtMs:number; id:string }>;
 const safeId=/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const secret=()=>process.env.APPLICATION_READ_CURSOR_SECRET||process.env.SESSION_COOKIE_SECRET||"";

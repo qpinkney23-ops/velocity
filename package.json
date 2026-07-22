@@ -19,6 +19,7 @@
     "velocity:ratios": "npx tsx scripts/velocityUnderwritingRatioSemanticsRegression.ts",
     "test:enterprise-bank-statement-renderer": "npx tsx scripts/validateEnterpriseBankStatementSlice.ts",
     "velocity:workflow": "npx tsx scripts/velocityWorkflowRegression.ts",
+    "velocity:enterprise-pipeline": "npx tsx scripts/velocityEnterprisePipelineRegression.ts",
     "velocity:report": "npx tsx scripts/velocityReportRegression.ts",
     "velocity:ocr": "npx tsx scripts/velocityOcrRegression.ts",
     "velocity:tenant-auth": "npx tsx scripts/velocityTenantAuthorizationRunner.ts",

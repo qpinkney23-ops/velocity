@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { fetchApplicationDetail } from "@/lib/applicationReadClient";
 import { useToast } from "@/components/ui/ToastProvider";
 import { calculateMonthlyQualifyingIncome, calculationInput } from "@/lib/mortgage/canonicalCalculations";
+import {deriveEnterpriseWorkflow,PRIORITIES} from "@/lib/workflow/enterprisePipeline";
 
 type Underwriter = {
   id: string;
@@ -2133,6 +2134,7 @@ export default function ApplicationDetailPage() {
   const [manualEvidence, setManualEvidence] = useState("");
   const [lastScanDiagnostics, setLastScanDiagnostics] = useState<ScanDiagnostics | null>(null);
   const [canonicalDocuments, setCanonicalDocuments] = useState<StoredDoc[]>([]);
+  const [workflowBusy,setWorkflowBusy]=useState(false);
   const [reviewSeverity,setReviewSeverity]=useState("all");
   const [reviewCategory,setReviewCategory]=useState("all");
   const [reviewDisposition,setReviewDisposition]=useState("all");
@@ -2198,6 +2200,7 @@ export default function ApplicationDetailPage() {
   const statusOptions = useMemo(() => ["New", "UW Review", "Conditions", "Approved"] as const, []);
   const underwritingReport = scan?.report || null;
   const enterpriseEvidence: EnterpriseEvidenceReview | null = scan?.enterpriseEvidence || (scan as any)?.analysis?.enterpriseEvidence || null;
+  const enterpriseWorkflow=deriveEnterpriseWorkflow({...((app||{}) as any),id,scan:scan||undefined,documentCount:storedDocs.length});
   const mortgageReview: MortgageReview | null = scan?.mortgageReview || (scan as any)?.analysis?.mortgageReview || null;
   const visibleMortgageFindings=(mortgageReview?.findings||[]).filter(f=>(reviewSeverity==="all"||f.severity===reviewSeverity)&&(reviewCategory==="all"||f.category===reviewCategory)&&(reviewDisposition==="all"||f.disposition===reviewDisposition)&&(reviewBorrower==="all"||(f.borrowerId||"unassociated")===reviewBorrower)&&(reviewResolution==="all"||f.resolutionStatus===reviewResolution));
   const scanDiagnostics = lastScanDiagnostics || scan?.diagnostics || null;
@@ -2307,6 +2310,7 @@ export default function ApplicationDetailPage() {
     });
     if (!response.ok) throw new Error((await response.json().catch(() => null))?.error?.message || "Condition command failed.");
   }
+  async function workflowCommand(commandType:string,payload:Record<string,unknown>){if(workflowBusy)return;setWorkflowBusy(true);try{const response=await fetch(`/api/applications/${id}/workflow`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({commandType,...payload,expectedVersion:(app as any)?.workflowVersion||(app as any)?.authorizationVersion,idempotencyKey:crypto.randomUUID()})});const result=await response.json().catch(()=>null);if(!response.ok)throw new Error(result?.error?.message||"Workflow action failed.");setApp(current=>current?{...current,workflowVersion:result.newVersion,...(commandType==="set_priority"?{priority:payload.priority}:{}),...(commandType==="transition_workflow"?{enterpriseWorkflow:{lifecycleStage:(payload as any).transitionId}}:{})} as any:current);toast({type:"success",title:"Workflow updated",message:"The authorized workflow action was recorded."})}catch(e:any){toast({type:"error",title:"Workflow action rejected",message:e?.message||"The workflow action was not allowed."})}finally{setWorkflowBusy(false)}}
 
   async function runAiScan() {
     if (scanning) return;
@@ -2998,6 +3002,14 @@ export default function ApplicationDetailPage() {
           </button>
         </div>
       </div>
+
+      <section className="v-card p-5" aria-label="Loan workflow">
+        <div className="flex justify-between gap-3 flex-wrap"><div><div className="text-sm font-semibold">Loan Workflow</div><div className="text-xs v-muted mt-1">{enterpriseWorkflow.validation.source==="legacy_adapter"?"Initialized safely from legacy application state.":"Enterprise workflow state."}</div></div><div className="flex gap-2 flex-wrap"><ToneChip label={toTitleWords(enterpriseWorkflow.lifecycleStage)} tone="blue"/><ToneChip label={toTitleWords(enterpriseWorkflow.operationalStatus)} tone={enterpriseWorkflow.blockingReasons.length?"red":"green"}/><ToneChip label={toTitleWords(enterpriseWorkflow.decisionState)} tone="gray"/></div></div>
+        <div className="grid md:grid-cols-5 gap-2 mt-4"><div className="v-card-soft p-3"><div className="text-xs v-muted">Owner</div><div className="text-sm font-semibold mt-1">{enterpriseWorkflow.assignment.kind==="user"?(enterpriseWorkflow.assignment.displayName||enterpriseWorkflow.assignment.userId):"Unassigned"}</div></div><div className="v-card-soft p-3"><div className="text-xs v-muted">Priority</div><select disabled={workflowBusy} value={enterpriseWorkflow.priority} onChange={e=>workflowCommand("set_priority",{priority:e.target.value})} className="mt-1 bg-transparent text-sm font-semibold">{PRIORITIES.map(x=><option key={x} value={x}>{toTitleWords(x)}</option>)}</select></div><div className="v-card-soft p-3"><div className="text-xs v-muted">Attention</div><div className="text-sm font-semibold mt-1">{toTitleWords(enterpriseWorkflow.attention)}</div></div><div className="v-card-soft p-3"><div className="text-xs v-muted">SLA</div><div className="text-sm font-semibold mt-1">{toTitleWords(enterpriseWorkflow.sla.state)}</div></div><div className="v-card-soft p-3"><div className="text-xs v-muted">Open Conditions</div><div className="text-sm font-semibold mt-1">{enterpriseWorkflow.outstandingConditionIds.length}</div></div></div>
+        {enterpriseWorkflow.blockingReasons.length?<div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800">{enterpriseWorkflow.blockingReasons.map(toTitleWords).join(" • ")}</div>:null}
+        <div className="mt-4"><div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Required next actions</div><div className="text-sm mt-1">{enterpriseWorkflow.requiredActions.join(" • ")}</div></div>
+        <div className="mt-4 flex gap-2 flex-wrap">{enterpriseWorkflow.allowedTransitions.map(transition=><button key={transition} disabled={workflowBusy} className={transition==="withdraw"||transition==="cancel"||transition==="close"?"v-btn-danger":"v-btn"} onClick={()=>{const finalAction=["withdraw","cancel","close"].includes(transition);if(finalAction&&!window.confirm(`Confirm ${toTitleWords(transition)}?`))return;const reason=["suspend","return_to_processing","withdraw","cancel"].includes(transition)?window.prompt("Reason required")||"":undefined;if(reason!==undefined&&!reason)return;void workflowCommand("transition_workflow",{transitionId:transition,...(reason?{reason}:{})})}}>{toTitleWords(transition)}</button>)}</div>
+      </section>
 
       {mortgageReview ? (
         <section className="v-card p-5" aria-label="Enterprise mortgage review">
