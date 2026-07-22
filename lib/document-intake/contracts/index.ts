@@ -1,0 +1,18 @@
+export const INTAKE_MANIFEST_VERSION = "velocity.document-intake.v1" as const;
+export const INTAKE_ENGINE_VERSION = "1.0.0" as const;
+
+export const DOCUMENT_TYPES = ["1003","Credit Report","Driver License","Passport","Paystub","W2","1099","Bank Statement","VOE","Tax Return","Purchase Agreement","Appraisal","Insurance Binder","Closing Disclosure","Loan Estimate","Asset Statement","HOA Docs","Letter of Explanation","Unknown"] as const;
+export type DocumentType = (typeof DOCUMENT_TYPES)[number];
+export type RotationAngle = 0 | 90 | 180 | 270;
+export type InputKind = "searchable_pdf" | "image_pdf" | "image";
+export type DetectionStatus = "detected" | "not_detected" | "unavailable";
+export type BorrowerAssociation = Readonly<{ status:"matched"; borrowerId:string; confidence:number; method:"explicit_upload"|"metadata_match" }> | Readonly<{ status:"unassociated"; confidence:0; method:"none" }>;
+export type Detection = Readonly<{status:DetectionStatus; confidence:number; detectorVersion:string|null}>;
+export type PageObservation = Readonly<{pageNumber:number;widthPixels:number;heightPixels:number;dpi:number|null;rotationDegrees:RotationAngle;contrast:number;noise:number;compression:number;cropping:number;completeness:number;scanConfidence:number;blur:Detection;fax:Detection;screenshot:Detection;handwritten:Detection}>;
+export type IntakeUpload = Readonly<{documentId:string;fileName:string;contentType:"application/pdf"|"image/png"|"image/jpeg";sizeBytes:number;sha256:string;uploadOrder:number;pageCount:number;inputKind:InputKind;nativeText?:string;borrowerId?:string;borrowerMatchConfidence?:number;pages:readonly PageObservation[];receivedAt:string;source:"lender_upload"|"borrower_upload"|"system_import"}>;
+export type DuplicateCandidate = Readonly<{documentId:string;sha256:string;perceptualHash?:string}>;
+export type IntakeBatchContext = Readonly<{knownDocuments?:readonly DuplicateCandidate[];perceptualHash?:string;groupId?:string}>;
+export type Classification = Readonly<{documentType:DocumentType;confidence:number;method:"deterministic_rules";evidence:readonly string[];classifierVersion:string}>;
+export type QualityMetrics = Readonly<{resolution:number;rotation:number;contrast:number;noise:number;compression:number;cropping:number;pageCompleteness:number;scanConfidence:number;ocrReadiness:number;normalizedScore:number}>;
+export type IntakeManifest = Readonly<{schemaVersion:typeof INTAKE_MANIFEST_VERSION;engineVersion:typeof INTAKE_ENGINE_VERSION;documentId:string;classification:Classification;quality:QualityMetrics;orientation:Readonly<{dominant:"portrait"|"landscape";rotationAngle:RotationAngle;mixedOrientation:boolean;requiresRotation:boolean}>;duplicate:Readonly<{isDuplicate:boolean;matchType:"exact"|"perceptual"|"none";duplicateOfDocumentId:string|null}>;grouping:Readonly<{groupId:string;pageCount:number;pages:readonly Readonly<{pageNumber:number;groupIndex:number}>[]}>;borrowerAssociation:BorrowerAssociation;metadata:Readonly<{fileName:string;contentType:string;sizeBytes:number;sha256:string;uploadOrder:number;pageCount:number;inputKind:InputKind;receivedAt:string;source:IntakeUpload["source"]}>;detections:Readonly<{blur:Detection;fax:Detection;screenshot:Detection;handwritten:Detection}>;estimatedOcrDifficulty:"low"|"medium"|"high";pipelineReadiness:Readonly<{readyForOcr:boolean;readyForExtraction:boolean;blockedReasons:readonly string[]}>;validation:Readonly<{valid:true;validatedAt:string;rules:readonly Readonly<{ruleId:string;status:"PASS";message:string}>[]}>}>;
+export type IntakeResult = Readonly<{ok:true;manifest:IntakeManifest}> | Readonly<{ok:false;errors:readonly Readonly<{ruleId:string;message:string}>[]}>;

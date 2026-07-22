@@ -1,0 +1,5 @@
+import type { EvidenceObject,ScalarValue,SourceAssessment } from "../contracts";import { valuesEqual } from "../normalization/values";
+const round=(n:number)=>Number(n.toFixed(4));
+export function assessSources(records:readonly EvidenceObject[]):readonly SourceAssessment[]{return Object.freeze(records.map(record=>{const peers=records.filter(x=>x.evidenceId!==record.evidenceId);const agreement=peers.length?peers.filter(x=>valuesEqual(x.normalizedValue,record.normalizedValue)).length/peers.length:1;const conflict=1-agreement;return Object.freeze({evidenceId:record.evidenceId,confidence:record.confidence,agreementScore:round(agreement),conflictScore:round(conflict)})}).sort((a,b)=>a.evidenceId.localeCompare(b.evidenceId)))}
+export function adjustedConfidence(record:EvidenceObject,assessments:readonly SourceAssessment[]):number{const a=assessments.find(x=>x.evidenceId===record.evidenceId)!;return round(record.confidence*.8+a.agreementScore*.2)}
+export const uniqueValues=(records:readonly EvidenceObject[]):readonly ScalarValue[]=>Object.freeze([...new Map(records.map(x=>[`${typeof x.normalizedValue}:${String(x.normalizedValue)}`,x.normalizedValue])).values()]);

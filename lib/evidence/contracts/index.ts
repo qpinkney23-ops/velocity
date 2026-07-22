@@ -1,0 +1,18 @@
+export const EVIDENCE_SCHEMA_VERSION="velocity.evidence.v1" as const;
+export const EVIDENCE_PACKAGE_VERSION="velocity.evidence-package.v1" as const;
+export const EVIDENCE_ENGINE_VERSION="1.0.0" as const;
+export const SUPPORTED_FIELDS=["borrower.name","borrower.address","borrower.ssn","borrower.dob","employment.employer","employment.length","income.amount","income.pay_frequency","assets.total","assets.bank_balance","credit.score","debts.monthly","property.address","property.purchase_price","property.appraised_value","loan.amount","loan.interest_rate","housing.insurance","housing.taxes","housing.hoa","assets.reserves"] as const;
+export type SupportedField=(typeof SUPPORTED_FIELDS)[number];
+export type FieldName=SupportedField|`custom.${string}`;
+export type ScalarValue=string|number|boolean|null;
+export type BoundingRegion=Readonly<{unit:"pixels"|"points"|"normalized";x:number;y:number;width:number;height:number;pageWidth:number;pageHeight:number}>;
+export type EvidenceInput=Readonly<{fieldName:FieldName;canonicalValue:ScalarValue;rawValue:string;normalizedValue:ScalarValue;confidence:number;documentId:string;documentType:string;borrowerId:string|null;pageNumber:number;boundingRegion:BoundingRegion;ocrText:string;extractionMethod:"native_text"|"ocr"|"barcode"|"form_parser"|"manual_review";sourceComponent:string;timestamp:string;version:string}>;
+export type EvidenceObject=Readonly<EvidenceInput&{schemaVersion:typeof EVIDENCE_SCHEMA_VERSION;evidenceId:string;validationStatus:"valid";provenance:Readonly<{sourceDocumentId:string;sourcePageNumber:number;sourceRegion:BoundingRegion;contentFingerprint:string}>}>;
+export type Conflict=Readonly<{conflictId:string;fieldName:FieldName;borrowerId:string|null;evidenceIds:readonly string[];normalizedValues:readonly ScalarValue[];severity:"low"|"medium"|"high";conflictScore:number;reason:"normalized_values_disagree"}>;
+export type SourceAssessment=Readonly<{evidenceId:string;confidence:number;agreementScore:number;conflictScore:number}>;
+export type FieldResolution=Readonly<{fieldName:FieldName;borrowerId:string|null;canonicalValue:ScalarValue;winningEvidenceId:string;supportingEvidenceIds:readonly string[];rejectedEvidenceIds:readonly string[];reason:"highest_adjusted_confidence"|"unanimous_evidence";confidence:number;sourceAssessments:readonly SourceAssessment[]}>;
+export type DerivedValueInput=Readonly<{fieldName:FieldName;borrowerId:string|null;canonicalValue:ScalarValue;formula:string;inputResolutionKeys:readonly string[];timestamp:string;version:string}>;
+export type DerivedValue=Readonly<DerivedValueInput&{derivedValueId:string;inputEvidenceIds:readonly string[]}>;
+export type EvidencePackage=Readonly<{schemaVersion:typeof EVIDENCE_PACKAGE_VERSION;engineVersion:typeof EVIDENCE_ENGINE_VERSION;packageId:string;createdAt:string;evidence:readonly EvidenceObject[];conflicts:readonly Conflict[];resolutions:readonly FieldResolution[];derivedValues:readonly DerivedValue[];validation:Readonly<{valid:true;ruleIds:readonly string[]}>}>;
+export type EvidenceResult<T>=Readonly<{ok:true;value:T}>|Readonly<{ok:false;errors:readonly Readonly<{ruleId:string;message:string}>[]}>;
+export const resolutionKey=(fieldName:FieldName,borrowerId:string|null)=>`${borrowerId??"unassociated"}::${fieldName}`;
